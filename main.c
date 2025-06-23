@@ -378,7 +378,7 @@ void add_entry(PLIST_ENTRY head, PFN* newpfn) {
     // Make the head Blink point towards our new entry/pfn
     head->Blink = &newpfn->entry;
 }
-// NOTE: HOW DO WE GET THE ATUAL PFN IF HEAD->FLINK RETURNS AN ENTRY LIST??
+// Get a free page from the free list
 PPFN pop_page(PLIST_ENTRY head) {
     // Check for empty list
     if (head->Flink == head) {
@@ -395,7 +395,7 @@ PPFN pop_page(PLIST_ENTRY head) {
     nextPage->entry.Blink = head;
     return freePage;
 }
-
+// Initialize both active and free list and add pfns to free list
 void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PTR physical_page_count) {
     // Create the head of our active list
     InitializeListHead(&activeList);
@@ -403,27 +403,77 @@ void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PT
     InitializeListHead(&freeList);
     // Get the head of our free list
     PLIST_ENTRY head = &freeList;
-    PFN pfn;
+    PPFN pfn;
     // Add all pages to free list
     for (int i = 0; i < physical_page_count; i++) {
-        pfn = pfnarray[i];
+        pfn = &pfnarray[i];
         // Save the frame number of a certain physical page into it's PFN
-        pfn.frameNumber = physical_page_numbers[i];
+        pfn->frameNumber = physical_page_numbers[i];
         // Add pfn into our doubly linked list
-        add_entry(head, &pfn);
+        add_entry(head, pfn);
     }
 }
 
 PPTE va_to_pte(PULONG_PTR virtual_address) {
-    ULONG64 index = (virtual_address - p) / PAGE_SIZE;
+    ULONG64 index = ((ULONG64) virtual_address - (ULONG64) p) / PAGE_SIZE;
     PPTE pte = pageTable + index;
     return pte;
 }
 PULONG_PTR pte_to_va(PPTE pte) {
     ULONG64 index = pte - pageTable;
-    PULONG_PTR va = (index * PAGE_SIZE) + p;
+    PULONG_PTR va = (PULONG_PTR)((index * PAGE_SIZE) + (ULONG64) p);
     return va;
 }
+// Get a page from the active list
+PPFN find_victim(PLIST_ENTRY head) {
+    if (head->Flink == head) {
+        printf("find_victim : empty list");
+        return NULL;
+    }
+    // Grab the last page in the list
+    PPFN victim = (PPFN)head->Blink;
+    // Grab the 2nd to last page
+    PPFN pageBefore = (PPFN)victim->entry.Blink;
+    // Make 2nd to last page point towards head
+    pageBefore->entry.Flink = head;
+    // Make head blink point towards 2nd to last page
+    head->Blink = &pageBefore->entry;
+    return victim;
+}
+
+PPFN trim_page() {
+    // Get the "oldest page" off the active list & remove it
+    PPFN victim = find_victim(&activeList);
+    if (victim == NULL) {
+        printf("trim_page : victim from find_victim() is empty");
+    }
+    PPTE pte = victim->pte;
+    PULONG_PTR virtual_address = pte_to_va(pte);
+    ULONG64 frameNumber = pte->validFormat.frameNumber;
+    // write to disc
+
+    // update pte
+    victim->pte = NULL;
+    pte->validFormat.frameNumber = 0;
+    pte->validFormat.valid = 0;
+    pte->invalidFormat.mustBeZero = 0;
+
+    // unmap pte
+    MapUserPhysicalPages(virtual_address, 1, NULL);
+    return victim;
+}
+void initialize_disk_space() {
+
+}
+/*
+void write_to_disc() {
+
+}
+// Create VA's in disc
+*/
+
+
+
 
 
 VOID
@@ -432,7 +482,6 @@ full_virtual_memory_test (
     )
 {
     unsigned i;
-    PULONG_PTR p;
     PULONG_PTR arbitrary_va;
     unsigned random_number;
     BOOL allocated;
@@ -654,23 +703,28 @@ full_virtual_memory_test (
             // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
             // STATE MACHINE !
             //
-
+            PPFN freePage;
+            PLIST_ENTRY head = &freeList;
             // Check if free list has pages available
             if (IsListEmpty(&freeList)) {
-                printf("full_virtual_memory_test : list is empty\n");
+                //printf("full_virtual_memory_test : list is empty\n");
+                // Since freeList is empty, we must trim a page off activelist
+                freePage = trim_page();
+                if (freePage == NULL) {
+                    printf("full_virtual_memory_test : trim_page returns null\n");
+                    return;
+                }
             }
-            PLIST_ENTRY head = &freeList;
-            // Get a free page from the free list
-            PPFN freePage;
-            freePage = pop_page(head);
-            if (freePage == NULL) {
-                printf("full_virtual_memory_test: freePage is null");
-                return;
+            else {
+                // Get a free page from the free list
+                freePage = pop_page(head);
+                if (freePage == NULL) {
+                    printf("full_virtual_memory_test: freePage is null");
+                    return;
+                }
             }
             // Get frame number for PFN/free page
             ULONG64 frameNumber = freePage->frameNumber;
-            // Map arbitrary_va to frame number
-            MapUserPhysicalPages(arbitrary_va, 1, &frameNumber);
             // Update PTE to reflect what I did (later when we have to look for victims), store 40 bit frame number & set valid to 1
             PPTE pte = va_to_pte(arbitrary_va);
             // save the pte the pfn corresponds to
@@ -681,7 +735,8 @@ full_virtual_memory_test (
             // get Head of active list and add our "free page" (which is now active) into our active list
             head = &activeList;
             add_entry(head, freePage);
-            if (MapUserPhysicalPages (arbitrary_va, 1, physical_page_numbers) == FALSE) {
+            // Map arbitrary_va to frame number
+            if (MapUserPhysicalPages (arbitrary_va, 1, &frameNumber) == FALSE) {
 
                 printf ("full_virtual_memory_test : could not map VA %p to page %llX\n", arbitrary_va, *physical_page_numbers);
 
@@ -695,19 +750,6 @@ full_virtual_memory_test (
             //
 
             *arbitrary_va = (ULONG_PTR) arbitrary_va;
-
-            //
-            // Unmap the virtual address translation we installed above
-            // now that we're done writing our value into it.
-            //
-
-            if (MapUserPhysicalPages (arbitrary_va, 1, NULL) == FALSE) {
-
-                printf ("full_virtual_memory_test : could not unmap VA %p\n", arbitrary_va);
-
-                return;
-            }
-
         }
     }
 

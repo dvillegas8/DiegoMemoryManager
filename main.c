@@ -34,7 +34,7 @@
 
 //
 // Deliberately use a physical page pool that is approximately 1% of the
-// virtual address space !
+// virtual address space
 //
 
 #define NUMBER_OF_PHYSICAL_PAGES   ((VIRTUAL_ADDRESS_SIZE / PAGE_SIZE) / 64)
@@ -463,7 +463,20 @@ PPFN trim_page() {
     return victim;
 }
 void initialize_disk_space() {
-
+    // VA space - PFN space ex: 10 virtual pages - 3 PFN pages = 7 disk pages, having 10 would be a waste
+    // We want 7 in this example so that we can have enough space to do swapping
+    ULONG_PTR disk_size = VIRTUAL_ADDRESS_SIZE //- (NUMBER_OF_PHYSICAL_PAGES * PAGE_SIZE);
+    PVOID disk_space = malloc(disk_size);
+    if (disk_space == NULL) {
+        printf("initialize_disk_space : disk_space malloc failed");
+    }
+    memset(disk_space, 0, disk_size);
+    boolean* disk_pages = malloc(disk_size / PAGE_SIZE);
+    if (disk_pages == NULL) {
+        printf("initialize_disk_space : disk_page malloc failed");
+    }
+    // 0 means that the disk page is available, 1 means the disk page is in use
+    memset(disk_pages, 0, disk_size / PAGE_SIZE);
 }
 /*
 void write_to_disc() {

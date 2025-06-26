@@ -360,10 +360,20 @@ typedef struct {
 LIST_ENTRY freeList;
 // Our doubly linked list containing all of our active pages
 LIST_ENTRY activeList;
+LIST_ENTRY modifiedList;
 // Virtual address...array? We can use this to find the beginning/base of our virtual address
 PULONG_PTR p;
 // PTE array called pageTable
 PPTE pageTable;
+// Index that has access to a disk page that is available
+ULONG64 disk_page_index;
+// Array of booleans to show us which disk pages are available
+boolean* disk_pages;
+// Disk
+PVOID disk_space;
+// Used to help us write to disk
+PULONG_PTR transfer_va;
+
 
 
 // Method which adds a new entry into our free list
@@ -401,6 +411,8 @@ void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PT
     InitializeListHead(&activeList);
     // Create the Head of our free list
     InitializeListHead(&freeList);
+    // Create the head of our modified list
+    InitializeListHead(&modifiedList);
     // Get the head of our free list
     PLIST_ENTRY head = &freeList;
     PPFN pfn;
@@ -441,7 +453,68 @@ PPFN find_victim(PLIST_ENTRY head) {
     return victim;
 }
 
-PPFN trim_page() {
+void initialize_disk_space() {
+    // VA space - PFN space ex: 10 virtual pages - 3 PFN pages = 7 disk pages, having 10 would be a waste
+    // We want 7 in this example so that we can have enough space to do swapping
+    // We add PAGE_SIZE to help us swap a disk page and physical page when all disk pages are full
+    ULONG_PTR disk_size = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES * PAGE_SIZE) + PAGE_SIZE;
+    disk_space = malloc(disk_size);
+    if (disk_space == NULL) {
+        printf("initialize_disk_space : disk_space malloc failed");
+    }
+    memset(disk_space, 0, disk_size);
+    disk_pages = malloc(disk_size / PAGE_SIZE);
+    if (disk_pages == NULL) {
+        printf("initialize_disk_space : disk_page malloc failed");
+    }
+    // 0 means that the disk page is available, 1 means the disk page is in use
+    memset(disk_pages, 0, disk_size / PAGE_SIZE);
+    // Skip index 0 so that when we page fault, we can correctly check diskIndex in PTE invalid format
+    disk_page_index = 1;
+}
+// Look for a free disk index
+void write_to_disk(ULONG64 frameNumber) {
+    if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
+        printf("write_to_disk : transfer_va is not mapped");
+        return;
+    }
+    // Look for a disk_page that is available
+    while(disk_pages[disk_page_index] != 0) {
+        disk_page_index++;
+        // Check if we are at the end of the array
+        if (disk_page_index == ARRAYSIZE(disk_pages)){
+            // NOTE: THIS IS WHERE WE SWAP PAGES
+            printf("write_to_disk: all pages are full?");
+            return;
+        }
+    }
+    PVOID diskAddress = PVOID((ULONG64) disk_space + (disk_page_index * PAGE_SIZE));
+    // Copy contents from transfer va to diskAddress
+    memcpy(diskAddress, transfer_va, PAGE_SIZE);
+    // Make disk page unavailable
+    disk_pages[disk_page_index] = 1;
+    // Unmap transfer VA
+    if (MapUserPhysicalPages(transfer_va, 1, NULL) == FALSE) {
+        printf("write_to_disk : transfer_va could not be unmapped");
+    }
+}
+void read_disk(ULONG64 disk_index, ULONG64 frameNumber) {
+    PVOID diskAddress = PVOID((ULONG64) disk_space + (disk_index * PAGE_SIZE));
+    if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
+        printf("write_to_disk : transfer_va could not be mapped");
+    }
+    memcpy(transfer_va, diskAddress, PAGE_SIZE);
+    if (MapUserPhysicalPages(diskAddress, 1, NULL) == FALSE) {
+        printf("write_to_disk : diskAddress could not be unmapped");
+    }
+    if (MapUserPhysicalPages(transfer_va, 1, NULL) == FALSE) {
+        printf("write_to_disk : transfer_va could not be unmapped");
+    }
+    // Make disk page available
+    disk_pages[disk_index] = 0;
+
+}
+void trim_page() {
     // Get the "oldest page" off the active list & remove it
     PPFN victim = find_victim(&activeList);
     if (victim == NULL) {
@@ -451,39 +524,16 @@ PPFN trim_page() {
     PULONG_PTR virtual_address = pte_to_va(pte);
     ULONG64 frameNumber = pte->validFormat.frameNumber;
     // write to disc
-
+    write_to_disk(frameNumber);
     // update pte
     victim->pte = NULL;
-    pte->validFormat.frameNumber = 0;
-    pte->validFormat.valid = 0;
-    pte->invalidFormat.mustBeZero = 0;
-
+    pte->entireFormat = 0;
     // unmap pte
     MapUserPhysicalPages(virtual_address, 1, NULL);
-    return victim;
+    pte->invalidFormat.diskIndex = disk_page_index;
+    add_entry(&freeList, victim);
 }
-void initialize_disk_space() {
-    // VA space - PFN space ex: 10 virtual pages - 3 PFN pages = 7 disk pages, having 10 would be a waste
-    // We want 7 in this example so that we can have enough space to do swapping
-    ULONG_PTR disk_size = VIRTUAL_ADDRESS_SIZE //- (NUMBER_OF_PHYSICAL_PAGES * PAGE_SIZE);
-    PVOID disk_space = malloc(disk_size);
-    if (disk_space == NULL) {
-        printf("initialize_disk_space : disk_space malloc failed");
-    }
-    memset(disk_space, 0, disk_size);
-    boolean* disk_pages = malloc(disk_size / PAGE_SIZE);
-    if (disk_pages == NULL) {
-        printf("initialize_disk_space : disk_page malloc failed");
-    }
-    // 0 means that the disk page is available, 1 means the disk page is in use
-    memset(disk_pages, 0, disk_size / PAGE_SIZE);
-}
-/*
-void write_to_disc() {
 
-}
-// Create VA's in disc
-*/
 
 
 
@@ -626,6 +676,8 @@ full_virtual_memory_test (
 
     //
     // Now perform random accesses.
+    // Initialize our transfer VA
+    transfer_va = malloc(PAGE_SIZE);
     // Find the largest frame number
     ULONG64 largestFN = 0;
     for (int i = 0; i < physical_page_count; i++) {
@@ -655,6 +707,8 @@ full_virtual_memory_test (
         pageTable[i].invalidFormat.diskIndex = 0;
         pageTable[i].invalidFormat.mustBeZero = 0;
     }
+    // Initialize disk space to continue our illusion
+    initialize_disk_space();
 
 
 
@@ -716,30 +770,24 @@ full_virtual_memory_test (
             // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
             // STATE MACHINE !
             //
-            PPFN freePage;
             PLIST_ENTRY head = &freeList;
-            // Check if free list has pages available
-            if (IsListEmpty(&freeList)) {
-                //printf("full_virtual_memory_test : list is empty\n");
-                // Since freeList is empty, we must trim a page off activelist
-                freePage = trim_page();
-                if (freePage == NULL) {
-                    printf("full_virtual_memory_test : trim_page returns null\n");
-                    return;
-                }
-            }
-            else {
-                // Get a free page from the free list
+            // Get the PTE from the va
+            PPTE pte = va_to_pte(arbitrary_va);
+            PPFN freePage;
+            // Get a free page from the free list
+            freePage = pop_page(head);
+            if (freePage == NULL) {
+                printf("full_virtual_memory_test: freePage is null");
+                // Since freeList is empty, we must trim a page off activeList
+                trim_page();
                 freePage = pop_page(head);
-                if (freePage == NULL) {
-                    printf("full_virtual_memory_test: freePage is null");
-                    return;
-                }
             }
             // Get frame number for PFN/free page
             ULONG64 frameNumber = freePage->frameNumber;
-            // Update PTE to reflect what I did (later when we have to look for victims), store 40 bit frame number & set valid to 1
-            PPTE pte = va_to_pte(arbitrary_va);
+            // Check if we saved the contents in disk
+            if (pte->invalidFormat.diskIndex != 0) {
+                read_disk(pte->invalidFormat.diskIndex, frameNumber);
+            }
             // save the pte the pfn corresponds to
             freePage->pte = pte;
             // Update PTE to reflect what I did (later when we have to look for victims), store 40 bit frame number & set valid to 1

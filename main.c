@@ -370,7 +370,9 @@ ULONG64 disk_page_index;
 // Array of booleans to show us which disk pages are available
 boolean* disk_pages;
 // Disk
-PVOID disk_space;
+PVOID disk;
+// Space for disk
+ULONG_PTR disk_size;
 // Used to help us write to disk
 PULONG_PTR transfer_va;
 
@@ -457,12 +459,12 @@ void initialize_disk_space() {
     // VA space - PFN space ex: 10 virtual pages - 3 PFN pages = 7 disk pages, having 10 would be a waste
     // We want 7 in this example so that we can have enough space to do swapping
     // We add PAGE_SIZE to help us swap a disk page and physical page when all disk pages are full
-    ULONG_PTR disk_size = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES * PAGE_SIZE) + PAGE_SIZE;
-    disk_space = malloc(disk_size);
-    if (disk_space == NULL) {
+    disk_size = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES * PAGE_SIZE) + PAGE_SIZE;
+    disk = malloc(disk_size);
+    if (disk == NULL) {
         printf("initialize_disk_space : disk_space malloc failed");
     }
-    memset(disk_space, 0, disk_size);
+    memset(disk, 0, disk_size);
     disk_pages = malloc(disk_size / PAGE_SIZE);
     if (disk_pages == NULL) {
         printf("initialize_disk_space : disk_page malloc failed");
@@ -488,7 +490,7 @@ void write_to_disk(ULONG64 frameNumber) {
             return;
         }
     }
-    PVOID diskAddress = PVOID((ULONG64) disk_space + (disk_page_index * PAGE_SIZE));
+    PVOID diskAddress = (PVOID)((ULONG64) disk_size + (disk_page_index * PAGE_SIZE));
     // Copy contents from transfer va to diskAddress
     memcpy(diskAddress, transfer_va, PAGE_SIZE);
     // Make disk page unavailable
@@ -499,20 +501,16 @@ void write_to_disk(ULONG64 frameNumber) {
     }
 }
 void read_disk(ULONG64 disk_index, ULONG64 frameNumber) {
-    PVOID diskAddress = PVOID((ULONG64) disk_space + (disk_index * PAGE_SIZE));
+    PVOID diskAddress = (PVOID)((ULONG64) disk_size + (disk_page_index * PAGE_SIZE));
     if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
         printf("write_to_disk : transfer_va could not be mapped");
     }
     memcpy(transfer_va, diskAddress, PAGE_SIZE);
-    if (MapUserPhysicalPages(diskAddress, 1, NULL) == FALSE) {
-        printf("write_to_disk : diskAddress could not be unmapped");
-    }
     if (MapUserPhysicalPages(transfer_va, 1, NULL) == FALSE) {
         printf("write_to_disk : transfer_va could not be unmapped");
     }
     // Make disk page available
     disk_pages[disk_index] = 0;
-
 }
 void trim_page() {
     // Get the "oldest page" off the active list & remove it

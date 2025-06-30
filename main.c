@@ -476,8 +476,9 @@ void initialize_disk_space() {
 }
 // Look for a free disk index
 void write_to_disk(ULONG64 frameNumber) {
+    // Temporarily map physical page to the transfer_va
     if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
-        printf("write_to_disk : transfer_va is not mapped");
+        printf("write_to_disk : transfer_va is not mapped\n");
         return;
     }
     // Look for a disk_page that is available
@@ -485,12 +486,11 @@ void write_to_disk(ULONG64 frameNumber) {
         disk_page_index++;
         // Check if we are at the end of the array
         if (disk_page_index == ARRAYSIZE(disk_pages)){
-            // NOTE: THIS IS WHERE WE SWAP PAGES
-            printf("write_to_disk: all pages are full?");
-            return;
+            // Wrap around the disk
+            disk_page_index = 1;
         }
     }
-    PVOID diskAddress = (PVOID)((ULONG64) disk_size + (disk_page_index * PAGE_SIZE));
+    PVOID diskAddress = (PVOID)((ULONG64) disk_size + disk_page_index * PAGE_SIZE);
     // Copy contents from transfer va to diskAddress
     memcpy(diskAddress, transfer_va, PAGE_SIZE);
     // Make disk page unavailable
@@ -501,13 +501,13 @@ void write_to_disk(ULONG64 frameNumber) {
     }
 }
 void read_disk(ULONG64 disk_index, ULONG64 frameNumber) {
-    PVOID diskAddress = (PVOID)((ULONG64) disk_size + (disk_page_index * PAGE_SIZE));
+    PVOID diskAddress = (PVOID)((ULONG64) disk_size + (disk_index * PAGE_SIZE));
     if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
-        printf("write_to_disk : transfer_va could not be mapped");
+        printf("read_to_disk : transfer_va could not be mapped");
     }
     memcpy(transfer_va, diskAddress, PAGE_SIZE);
     if (MapUserPhysicalPages(transfer_va, 1, NULL) == FALSE) {
-        printf("write_to_disk : transfer_va could not be unmapped");
+        printf("read_to_disk : transfer_va could not be unmapped");
     }
     // Make disk page available
     disk_pages[disk_index] = 0;
@@ -519,16 +519,18 @@ void trim_page() {
         printf("trim_page : victim from find_victim() is empty");
     }
     PPTE pte = victim->pte;
+    if (pte == NULL) {
+        printf("trim_page : victim pte is empty");
+    }
     PULONG_PTR virtual_address = pte_to_va(pte);
-    ULONG64 frameNumber = pte->validFormat.frameNumber;
-    // write to disc
-    write_to_disk(frameNumber);
-    // update pte
-    victim->pte = NULL;
-    pte->entireFormat = 0;
-    // unmap pte
+    // Unmap pte
     MapUserPhysicalPages(virtual_address, 1, NULL);
-    pte->invalidFormat.diskIndex = disk_page_index;
+    // write to disc
+    write_to_disk(victim->frameNumber);
+    // update pte in pfn
+    victim->pte->invalidFormat.mustBeZero = 0;
+    victim->pte->invalidFormat.diskIndex = disk_page_index;
+    disk_page_index++;
     add_entry(&freeList, victim);
 }
 
@@ -675,7 +677,10 @@ full_virtual_memory_test (
     //
     // Now perform random accesses.
     // Initialize our transfer VA
-    transfer_va = malloc(PAGE_SIZE);
+    transfer_va = VirtualAlloc (NULL,
+                      virtual_address_size,
+                      MEM_RESERVE | MEM_PHYSICAL,
+                      PAGE_READWRITE);
     // Find the largest frame number
     ULONG64 largestFN = 0;
     for (int i = 0; i < physical_page_count; i++) {
@@ -769,6 +774,10 @@ full_virtual_memory_test (
             // STATE MACHINE !
             //
             PLIST_ENTRY head = &freeList;
+            // Check if Free list is empty
+            if(IsListEmpty(head)){
+                trim_page();
+            }
             // Get the PTE from the va
             PPTE pte = va_to_pte(arbitrary_va);
             PPFN freePage;
@@ -776,9 +785,6 @@ full_virtual_memory_test (
             freePage = pop_page(head);
             if (freePage == NULL) {
                 printf("full_virtual_memory_test: freePage is null");
-                // Since freeList is empty, we must trim a page off activeList
-                trim_page();
-                freePage = pop_page(head);
             }
             // Get frame number for PFN/free page
             ULONG64 frameNumber = freePage->frameNumber;

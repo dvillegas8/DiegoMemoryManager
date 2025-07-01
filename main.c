@@ -523,6 +523,17 @@ void read_disk(ULONG64 disk_index, ULONG64 frameNumber) {
     // Make disk page available
     disk_pages[disk_index] = 0;
 }
+void zeroPage(ULONG64 frameNumber) {
+    if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
+        DebugBreak();
+        printf("read_to_disk : transfer_va could not be mapped");
+    }
+    memset(transfer_va, 0, PAGE_SIZE);
+    if (MapUserPhysicalPages(transfer_va, 1, NULL) == FALSE) {
+        DebugBreak();
+        printf("read_to_disk : transfer_va could not be unmapped");
+    }
+}
 void trim_page() {
     // Get the "oldest page" off the active list & remove it
     PPFN victim = find_victim(&activeList);
@@ -550,9 +561,16 @@ void trim_page() {
     }
     add_entry(&freeList, victim);
 }
-
-
-
+VOID
+checkVa(PULONG64 va) {
+    va = (PULONG64) ((ULONG64)va & ~(PAGE_SIZE - 1));
+    for (int i = 0; i < PAGE_SIZE / 8; ++i) {
+        if (!(*va == 0 || *va == (ULONG64) va)) {
+            DebugBreak();
+        }
+        va += 1;
+    }
+}
 
 
 
@@ -809,6 +827,11 @@ full_virtual_memory_test (
             if (pte->invalidFormat.diskIndex != 0) {
                 read_disk(pte->invalidFormat.diskIndex, frameNumber);
             }
+            // VA that hasn't been connected to a physical page before case
+            else {
+                // Erase the old contents of the physical page
+                zeroPage(frameNumber);
+            }
             // save the pte the pfn corresponds to
             freePage->pte = pte;
             // Update PTE to reflect what I did (later when we have to look for victims), store 40 bit frame number & set valid to 1
@@ -832,6 +855,7 @@ full_virtual_memory_test (
             //
 
             *arbitrary_va = (ULONG_PTR) arbitrary_va;
+            checkVa(arbitrary_va);
         }
     }
 

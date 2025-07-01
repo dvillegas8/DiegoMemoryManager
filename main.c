@@ -11,7 +11,7 @@
 // detect and fix unintended failures to unmap virtual addresses properly.
 //
 
-#define SUPPORT_MULTIPLE_VA_TO_SAME_PAGE 1
+#define SUPPORT_MULTIPLE_VA_TO_SAME_PAGE 0
 
 #pragma comment(lib, "advapi32.lib")
 
@@ -475,38 +475,49 @@ void initialize_disk_space() {
     disk_page_index = 1;
 }
 // Look for a free disk index
-void write_to_disk(ULONG64 frameNumber) {
+boolean write_to_disk(ULONG64 frameNumber) {
     // Temporarily map physical page to the transfer_va
     if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
+        DebugBreak();
         printf("write_to_disk : transfer_va is not mapped\n");
-        return;
     }
+    ULONG64 counter = 0;
     // Look for a disk_page that is available
-    while(disk_pages[disk_page_index] != 0) {
+    while(disk_pages[disk_page_index] != 0 && counter != 2) {
         disk_page_index++;
         // Check if we are at the end of the array
-        if (disk_page_index == ARRAYSIZE(disk_pages)){
+        if (disk_page_index == (disk_size / PAGE_SIZE) - 1){
             // Wrap around the disk
             disk_page_index = 1;
+            counter++;
         }
     }
-    PVOID diskAddress = (PVOID)((ULONG64) disk_size + disk_page_index * PAGE_SIZE);
+    // Means that there is no disk page available
+    if (counter >= 2) {
+        MapUserPhysicalPages(transfer_va, 1, NULL);
+        return FALSE;
+    }
+    PVOID diskAddress = (PVOID)((ULONG64) disk + disk_page_index * PAGE_SIZE);
     // Copy contents from transfer va to diskAddress
     memcpy(diskAddress, transfer_va, PAGE_SIZE);
     // Make disk page unavailable
     disk_pages[disk_page_index] = 1;
     // Unmap transfer VA
     if (MapUserPhysicalPages(transfer_va, 1, NULL) == FALSE) {
+        DebugBreak();
         printf("write_to_disk : transfer_va could not be unmapped");
     }
+    return TRUE;
 }
 void read_disk(ULONG64 disk_index, ULONG64 frameNumber) {
-    PVOID diskAddress = (PVOID)((ULONG64) disk_size + (disk_index * PAGE_SIZE));
+    PVOID diskAddress = (PVOID)((ULONG64) disk + (disk_index * PAGE_SIZE));
     if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
+        DebugBreak();
         printf("read_to_disk : transfer_va could not be mapped");
     }
     memcpy(transfer_va, diskAddress, PAGE_SIZE);
     if (MapUserPhysicalPages(transfer_va, 1, NULL) == FALSE) {
+        DebugBreak();
         printf("read_to_disk : transfer_va could not be unmapped");
     }
     // Make disk page available
@@ -524,13 +535,19 @@ void trim_page() {
     }
     PULONG_PTR virtual_address = pte_to_va(pte);
     // Unmap pte
-    MapUserPhysicalPages(virtual_address, 1, NULL);
+    if (MapUserPhysicalPages(virtual_address, 1, NULL) == FALSE) {
+        DebugBreak();
+        printf("trim_page : VA could not be unmapped");
+    }
     // write to disc
-    write_to_disk(victim->frameNumber);
-    // update pte in pfn
-    victim->pte->invalidFormat.mustBeZero = 0;
-    victim->pte->invalidFormat.diskIndex = disk_page_index;
-    disk_page_index++;
+    if (write_to_disk(victim->frameNumber)){
+        // update pte in pfn
+        victim->pte->invalidFormat.mustBeZero = 0;
+        victim->pte->invalidFormat.diskIndex = disk_page_index;
+    }
+    else {
+        victim->pte->entireFormat = 0;
+    }
     add_entry(&freeList, victim);
 }
 
@@ -678,14 +695,14 @@ full_virtual_memory_test (
     // Now perform random accesses.
     // Initialize our transfer VA
     transfer_va = VirtualAlloc (NULL,
-                      virtual_address_size,
+                      PAGE_SIZE,
                       MEM_RESERVE | MEM_PHYSICAL,
                       PAGE_READWRITE);
     // Find the largest frame number
     ULONG64 largestFN = 0;
     for (int i = 0; i < physical_page_count; i++) {
-        if (largestFN < physical_page_numbers[i]) {
-            largestFN = physical_page_numbers[i];
+        if (largestFN < physical_page_numbers[i] + 1) {
+            largestFN = physical_page_numbers[i] + 1;
         }
     }
     // Create an array of PFN's
@@ -802,7 +819,7 @@ full_virtual_memory_test (
             add_entry(head, freePage);
             // Map arbitrary_va to frame number
             if (MapUserPhysicalPages (arbitrary_va, 1, &frameNumber) == FALSE) {
-
+                DebugBreak();
                 printf ("full_virtual_memory_test : could not map VA %p to page %llX\n", arbitrary_va, *physical_page_numbers);
 
                 return;

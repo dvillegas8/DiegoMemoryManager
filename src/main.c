@@ -1,7 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "macros.h"
+#include "../macros.h"
+#include "../include/initializer.h"
+#include "../include/lists.h"
+#include "../include/pfn.h"
+#include "../include/pte.h"
+#include "../include/reader.h"
+#include "../include/trimmer.h"
+#include "../include/util.h"
+#include "../include/writer.h"
+
 
 //
 // This define enables code that lets us create multiple virtual address
@@ -18,7 +27,7 @@
 #if SUPPORT_MULTIPLE_VA_TO_SAME_PAGE
 #pragma comment(lib, "onecore.lib")
 #endif
-
+/*
 #define PAGE_SIZE                   4096
 
 #define MB(x)                       ((x) * 1024 * 1024)
@@ -38,7 +47,7 @@
 //
 
 #define NUMBER_OF_PHYSICAL_PAGES   ((VIRTUAL_ADDRESS_SIZE / PAGE_SIZE) / 64)
-
+*/
 BOOL
 GetPrivilege  (
     VOID
@@ -313,7 +322,7 @@ commit_at_fault_time_test (
 
     return;
 }
-
+/*
 // Pte = Page Table Entry
 // Struct has 64 bits available
 // Note, the number all the way to the right is how many bits we allocate to the field
@@ -341,7 +350,6 @@ typedef struct {
     union {
         validPte validFormat;
         invalidPte invalidFormat;
-        // **Check in with Landy about this**, not sure what this is for
         ULONG64 entireFormat;
     };
 } PTE, *PPTE;
@@ -482,6 +490,7 @@ boolean write_to_disk(ULONG64 frameNumber) {
         printf("write_to_disk : transfer_va is not mapped\n");
     }
     ULONG64 counter = 0;
+    // TODO: Make this more efficient because we just linear walk through the disk
     // Look for a disk_page that is available
     while(disk_pages[disk_page_index] != 0 && counter != 2) {
         disk_page_index++;
@@ -561,8 +570,8 @@ void trim_page() {
     }
     add_entry(&freeList, victim);
 }
-VOID
-checkVa(PULONG64 va) {
+
+void checkVa(PULONG64 va) {
     va = (PULONG64) ((ULONG64)va & ~(PAGE_SIZE - 1));
     for (int i = 0; i < PAGE_SIZE / 8; ++i) {
         if (!(*va == 0 || *va == (ULONG64) va)) {
@@ -573,7 +582,7 @@ checkVa(PULONG64 va) {
 }
 
 
-
+*/
 VOID
 full_virtual_memory_test (
     VOID
@@ -711,6 +720,7 @@ full_virtual_memory_test (
 
     //
     // Now perform random accesses.
+    // TODO: Turn these into initialize functions
     // Initialize our transfer VA
     transfer_va = VirtualAlloc (NULL,
                       PAGE_SIZE,

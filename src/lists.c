@@ -49,5 +49,19 @@ PPFN find_victim(PLIST_ENTRY head) {
     head->Blink = &pageBefore->entry;
     return victim;
 }
+PPFN getFreePage() {
+    PLIST_ENTRY head = &freeList;
+    PPFN freePage;
+    // Check if Free list is empty
+    if(IsListEmpty(head)){
+        trim_page();
+    }
+    // Get a free page from the free list
+    freePage = pop_page(head);
+    if (freePage == NULL) {
+        printf("full_virtual_memory_test: freePage is null");
+    }
+    return freePage;
+}
 
 //

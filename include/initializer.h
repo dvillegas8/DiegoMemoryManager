@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "../include/pfn.h"
+#include "../include/util.h"
 
 #define PAGE_SIZE                   4096
 #define MB(x)                       ((x) * 1024 * 1024)
@@ -25,8 +26,10 @@
 
 
 // Variables
-// Virtual address...array? We can use this to find the beginning/base of our virtual address
-PULONG_PTR p;
+
+
+// Virtual address array/base
+PULONG_PTR vaBase;
 // PTE array called pageTable
 PPTE pageTable;
 // Index that has access to a disk page that is available
@@ -39,10 +42,16 @@ PVOID disk;
 ULONG_PTR disk_size;
 // Used to help us write to disk
 PULONG_PTR transfer_va;
+// PFN array
+PPFN pfnarray;
+// Array which holds all the frame numbers
+PULONG_PTR physical_page_numbers;
+ULONG_PTR virtual_address_size_in_unsigned_chunks;
 
 // Initialize Functions
 void initialize_lists(PULONG_PTR physical_page_numbers, PPFN pfnArray, ULONG_PTR physical_page_count);
 void initialize_disk_space();
+void initializeVirtualMemory();
 
 
 #endif //INITIALIZER_H

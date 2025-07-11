@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "../include/pfn.h"
+#include "../include/trimmer.h"
+#include "../macros.h"
 // Lists variables
 // Our doubly linked list containing all of our free pages
 LIST_ENTRY freeList;
@@ -21,5 +23,6 @@ LIST_ENTRY modifiedList;
 void add_entry(PLIST_ENTRY head, PFN* newpfn);
 PPFN pop_page(PLIST_ENTRY head);
 PPFN find_victim(PLIST_ENTRY head);
+PPFN getFreePage();
 
 #endif //LISTS_H

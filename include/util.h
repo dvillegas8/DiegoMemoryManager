@@ -13,5 +13,6 @@
 
 void checkVa(PULONG64 va);
 void zeroPage(ULONG64 frameNumber);
+BOOL GetPrivilege(VOID);
 
 #endif //UTIL_H

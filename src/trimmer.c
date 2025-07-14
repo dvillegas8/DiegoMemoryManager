@@ -30,6 +30,8 @@ void trim_page() {
     else {
         victim->pte->entireFormat = 0;
     }
+    // Set status as free because we are adding the victim to our freelist
+    victim->status = PFN_FREE;
     add_entry(&freeList, victim);
 }
 //

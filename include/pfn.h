@@ -12,6 +12,13 @@
 #include <stddef.h>
 #include "../include/pte.h"
 
+// PFN status
+#define PFN_FREE 0x0
+#define PFN_ACTIVE 0x1
+#define PFN_MODIFIED 0x2
+#define PFN_STANDBY 0x3
+
+
 // PFN struct
 typedef struct {
     // Help us create our doubly linked list
@@ -20,6 +27,8 @@ typedef struct {
     PPTE pte;
     // Index that maps to a place in physical memory
     ULONG64 frameNumber;
+    // Indicates the status of the PFN/which list it is currently on
+    ULONG64 status: 2;
 
 } PFN, *PPFN;
 

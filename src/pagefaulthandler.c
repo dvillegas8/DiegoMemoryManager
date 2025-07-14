@@ -11,6 +11,8 @@ void makePTEValid(PPTE pte, PPFN freePage, PULONG_PTR fault_va){
     // Update PTE to reflect what I did (later when we have to look for victims), store 40 bit frame number & set valid to 1
     freePage->pte->validFormat.frameNumber = frameNumber;
     freePage->pte->validFormat.valid = 1;
+    // Set our pfn status as active because we are connecting a va to a physical page
+    freePage->status = PFN_ACTIVE;
     // get Head of active list and add our "free page" (which is now active) into our active list
     head = &activeList;
     add_entry(head, freePage);

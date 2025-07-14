@@ -11,6 +11,8 @@ void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PT
     InitializeListHead(&freeList);
     // Create the head of our modified list
     InitializeListHead(&modifiedList);
+    // Create the head of our standby list
+    InitializeListHead(&standbyList);
     // Get the head of our free list
     PLIST_ENTRY head = &freeList;
     PPFN pfn;
@@ -19,6 +21,8 @@ void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PT
         pfn = &pfnarray[i];
         // Save the frame number of a certain physical page into it's PFN
         pfn->frameNumber = physical_page_numbers[i];
+        // Put status as currently free
+        pfn->status = PFN_FREE;
         // Add pfn into our doubly linked list
         add_entry(head, pfn);
     }

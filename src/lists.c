@@ -55,6 +55,8 @@ PPFN getFreePage() {
     // Check if Free list is empty
     if(IsListEmpty(head)){
         trim_page();
+        // TODO: since we trimmed, our trimmed page is in our stanbylist
+        head = &standbyList;
     }
     // Get a free page from the free list
     freePage = pop_page(head);
@@ -62,6 +64,27 @@ PPFN getFreePage() {
         printf("full_virtual_memory_test: freePage is null");
     }
     return freePage;
+}
+// TODO: Create a function where we remove a page of a list without returning it
+// This is just for modfied since we already have access to the victim page
+void removePage(PLIST_ENTRY head) {
+    if (head->Flink == head) {
+        printf("removePage : empty list");
+        return;
+    }
+    // Get the page/PFN we want to remove
+    PPFN pageRemoved = (PPFN)head->Flink;
+    // Get the PFN after our freepage
+    // TODO: will this prove an issue if we only have 1 PFN in the list? I am asking this because if we have 1 PFN in
+    // TODO: The list, the line below will cast the head of the list as a
+    PPFN nextPage = (PPFN)pageRemoved->entry.Flink;
+    if (nextPage == NULL) {
+        DebugBreak();
+    }
+    // Make head Flink point towards nextpage
+    head->Flink = &nextPage->entry;
+    // Make nextpage blink point towards head
+    nextPage->entry.Blink = head;
 }
 
 //

@@ -29,5 +29,6 @@ void add_entry(PLIST_ENTRY head, PFN* newpfn);
 PPFN pop_page(PLIST_ENTRY head);
 PPFN find_victim(PLIST_ENTRY head);
 PPFN getFreePage();
+void removePage(PLIST_ENTRY head);
 
 #endif //LISTS_H

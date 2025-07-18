@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "../include/lists.h"
 // Trimmer functions
 void trim_page();
 

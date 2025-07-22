@@ -50,8 +50,10 @@ PPFN find_victim(PLIST_ENTRY head) {
     return victim;
 }
 PPFN getFreePage() {
-    PLIST_ENTRY head = &freeList;
+    PLIST_ENTRY head;
     PPFN freePage;
+
+    head = &freeList;
     // Check if Free list is empty
     if(IsListEmpty(head)){
         trim_page();

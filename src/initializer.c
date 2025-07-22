@@ -15,6 +15,8 @@ void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PT
     InitializeListHead(&standbyList);
     // Get the head of our free list
     PLIST_ENTRY head = &freeList;
+    //TODO: Delete this once initialize Sparse array works
+    /*
     PPFN pfn;
     // Add all pages to free list
     for (int i = 0; i < physical_page_count; i++) {
@@ -26,7 +28,25 @@ void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PT
         // Add pfn into our doubly linked list
         add_entry(head, pfn);
     }
+    */
 }
+void initializeSparseArray(PULONG_PTR physical_page_numbers) {
+    PPFN pfn;
+    for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; i++){
+        // Commit physical memory to this spot in the PFN array since we will be mapping the frame number to this
+        // specific pfn
+        LPVOID result = VirtualAlloc((PFN_array + physical_page_numbers[i]), sizeof(PFN),
+            MEM_COMMIT, PAGE_READWRITE);
+        if (result == NULL) {
+            printf("initialize_sparse_array: VirtualAlloc failed\n");
+        }
+        pfn = PFN_array + physical_page_numbers[i];
+        pfn->status = PFN_FREE;
+        // TODO: check in about zeroing out this page
+        add_entry(&freeList, pfn);
+    }
+}
+
 void initialize_disk_space() {
     // VA space - PFN space ex: 10 virtual pages - 3 PFN pages = 7 disk pages, having 10 would be a waste
     // We want 7 in this example so that we can have enough space to do swapping
@@ -185,6 +205,11 @@ void initializeVirtualMemory() {
             largestFN = physical_page_numbers[i] + 1;
         }
     }
+    // Sparse array of PFN
+    PFN_array = VirtualAlloc(NULL, largestFN * sizeof(PFN), MEM_RESERVE, PAGE_READWRITE);
+    if (PFN_array == NULL) {
+        printf("InitializeVirtualMemory : could not allocate PFN_array\n");
+    }
     // Create an array of PFN's
     pfnarray = malloc(largestFN * sizeof(PFN));
     // Error check to see if pfnarray has been allocated
@@ -195,6 +220,7 @@ void initializeVirtualMemory() {
     //
     memset(pfnarray, 0, largestFN * sizeof(PFN));
     initialize_lists (physical_page_numbers, pfnarray, physical_page_count);
+    initializeSparseArray(physical_page_numbers);
     // Sets up an array of PTE's called the page table
     pageTable = malloc(VIRTUAL_ADDRESS_SIZE / PAGE_SIZE * sizeof(PTE));
     if (pageTable == NULL) {

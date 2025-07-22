@@ -19,20 +19,24 @@
 #define PFN_STANDBY 0x3
 
 
+
+
 // PFN struct
 typedef struct {
     // Help us create our doubly linked list
     LIST_ENTRY entry;
     // Pointer of the PTE this pfn belongs to
     PPTE pte;
-    // Index that maps to a place in physical memory
-    ULONG64 frameNumber;
     // Indicates the status of the PFN/which list it is currently on
     ULONG64 status: 2;
 
 } PFN, *PPFN;
 
+// Variables
+PPFN PFN_array;
+
 // PFN functions
+ULONG64 getFrameNumber();
 
 
 #endif //PFN_H

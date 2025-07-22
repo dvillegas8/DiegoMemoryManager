@@ -6,8 +6,14 @@
 #include "../include/lists.h"
 #include "../include/initializer.h"
 void trim_page() {
+    PPFN victim;
+    PPTE pte;
+    PULONG_PTR virtual_address;
+    ULONG64 frameNumber;
+
+
     // Get the "oldest page" off the active list & remove it
-    PPFN victim = find_victim(&activeList);
+    victim = find_victim(&activeList);
     // Make victim page modified because we trimmed it and about to add it to disk
     victim->status = PFN_MODIFIED;
     // Add victim to modified list
@@ -15,18 +21,19 @@ void trim_page() {
     if (victim == NULL) {
         printf("trim_page : victim from find_victim() is empty");
     }
-    PPTE pte = victim->pte;
+    pte = victim->pte;
     if (pte == NULL) {
         printf("trim_page : victim pte is empty");
     }
-    PULONG_PTR virtual_address = pte_to_va(pte);
+    virtual_address = pte_to_va(pte);
     // Unmap pte
     if (MapUserPhysicalPages(virtual_address, 1, NULL) == FALSE) {
         DebugBreak();
         printf("trim_page : VA could not be unmapped");
     }
+    frameNumber = getFrameNumber(victim);
     // write to disc
-    if (write_to_disk(victim->frameNumber)){
+    if (write_to_disk(frameNumber)){
         // TODO: Remove victim from modified list and change state to stanby + add to standby list because we have written
         // TODO: Page onto disk
         removePage(&modifiedList);
@@ -36,7 +43,6 @@ void trim_page() {
         victim->pte->invalidFormat.mustBeZero = 0;
         victim->pte->invalidFormat.diskIndex = disk_page_index;
         add_entry(&standbyList, victim);
-        // Make victim status modified because we finished writing to disk & add it t modified list
     }
     else {
         victim->pte->entireFormat = 0;

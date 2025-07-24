@@ -9,6 +9,7 @@
 #include <windows.h>
 #include "../include/pfn.h"
 #include "../include/util.h"
+#include "../include/main.h"
 
 #define PAGE_SIZE                   4096
 #define MB(x)                       ((x) * 1024 * 1024)
@@ -24,6 +25,11 @@
 //
 #define NUMBER_OF_PHYSICAL_PAGES   ((VIRTUAL_ADDRESS_SIZE / PAGE_SIZE) / 64)
 
+// Thread information
+#define DEFAULT_SECURITY        ((LPSECURITY_ATTRIBUTES) NULL)
+#define DEFAULT_STACK_SIZE      0
+#define DEFAULT_CREATION_FLAGS  0
+#define AUTO_RESET              FALSE
 
 // Variables
 
@@ -48,9 +54,18 @@ PPFN pfnarray;
 PULONG_PTR physical_page_numbers;
 ULONG_PTR virtual_address_size_in_unsigned_chunks;
 
+// Events
+HANDLE startEvent;
+
+// Threads
+HANDLE userThread;
+
 // Initialize Functions
 void initialize_lists(PULONG_PTR physical_page_numbers, PPFN pfnArray, ULONG_PTR physical_page_count);
 void initialize_disk_space();
+void initializeVirtualMemory();
+void initializeEvents();
+void initializeThreads();
 void initializeVirtualMemory();
 
 

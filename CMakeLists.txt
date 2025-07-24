@@ -24,4 +24,5 @@ add_executable(DiegoMemoryManager src/main.c
         src/threads.c
         include/pagefaulthandler.h
         src/pagefaulthandler.c
+        include/main.h
 )

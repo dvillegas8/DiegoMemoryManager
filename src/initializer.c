@@ -13,22 +13,6 @@ void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PT
     InitializeListHead(&modifiedList);
     // Create the head of our standby list
     InitializeListHead(&standbyList);
-    // Get the head of our free list
-    PLIST_ENTRY head = &freeList;
-    //TODO: Delete this once initialize Sparse array works
-    /*
-    PPFN pfn;
-    // Add all pages to free list
-    for (int i = 0; i < physical_page_count; i++) {
-        pfn = &pfnarray[i];
-        // Save the frame number of a certain physical page into it's PFN
-        pfn->frameNumber = physical_page_numbers[i];
-        // Put status as currently free
-        pfn->status = PFN_FREE;
-        // Add pfn into our doubly linked list
-        add_entry(head, pfn);
-    }
-    */
 }
 void initializeSparseArray(PULONG_PTR physical_page_numbers) {
     PPFN pfn;
@@ -65,6 +49,24 @@ void initialize_disk_space() {
     memset(disk_pages, 0, disk_size / PAGE_SIZE);
     // Skip index 0 so that when we page fault, we can correctly check diskIndex in PTE invalid format
     disk_page_index = 1;
+}
+
+void initializeEvents() {
+    startEvent = CreateEvent (NULL, TRUE, FALSE, NULL);
+}
+void initializeThreads() {
+    userThread = CreateThread (DEFAULT_SECURITY,
+                               DEFAULT_STACK_SIZE,
+                               accessVirtualMemory,
+                               NULL,
+                               DEFAULT_CREATION_FLAGS,
+                               NULL);
+    if (userThread == NULL) {
+        DebugBreak();
+        printf ("could not create test thread\n");
+    }
+
+
 }
 void initializeVirtualMemory() {
     BOOL allocated;

@@ -1,16 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <windows.h>
-#include "../macros.h"
-#include "../include/initializer.h"
-#include "../include/lists.h"
-#include "../include/pfn.h"
-#include "../include/pte.h"
-#include "../include/reader.h"
-#include "../include/trimmer.h"
-#include "../include/util.h"
-#include "../include/writer.h"
-#include "../include/pagefaulthandler.h"
+#include"../include/main.h"
 
 
 //
@@ -62,10 +50,7 @@ CreateSharedMemorySection (
 
 #endif
 
-VOID
-malloc_test (
-    VOID
-    )
+VOID malloc_test (VOID)
 {
     unsigned i;
     PULONG_PTR p;
@@ -120,10 +105,7 @@ malloc_test (
 }
 
 
-VOID
-commit_at_fault_time_test (
-    VOID
-    )
+VOID commit_at_fault_time_test (VOID)
 {
     unsigned i;
     PULONG_PTR p;
@@ -218,7 +200,17 @@ commit_at_fault_time_test (
 
     return;
 }
-void accessVirtualMemory() {
+
+ULONG accessVirtualMemory (PVOID Context)
+{
+    ULONG ReturnValue;
+
+
+    ReturnValue = WaitForSingleObject (startEvent, INFINITE);
+    if (ReturnValue == 0) {
+        ULONG ExitCode;
+        ReturnValue = GetExitCodeProcess (userThread, &ExitCode);
+    }
     unsigned i;
     PULONG_PTR arbitrary_va;
     unsigned random_number;
@@ -290,6 +282,7 @@ void accessVirtualMemory() {
         }
     }
     printf ("full_virtual_memory_test : finished accessing %u random virtual addresses\n", i);
+    return 0;
 }
 //
 void tearDownVirtualMemory(){
@@ -308,11 +301,28 @@ full_virtual_memory_test (
     VOID
     )
 {
-    // Set up PTEs, PFNs, disks, threads, events, lists
-    initializeVirtualMemory();
-    // Run user mode accesses to exercise virtual memory
-    accessVirtualMemory();
+    ULONG ReturnValue;
 
+
+    // Set up PTEs, PFNs, disks, threads, events, lists
+    initializeEvents();
+    initializeThreads();
+    initializeVirtualMemory();
+    SetEvent(startEvent);
+    ResetEvent(startEvent);
+    // Run user mode accesses to exercise virtual memory
+    // Run user mode accesses to exercise virtual memory
+
+    ReturnValue = WaitForSingleObject (userThread,
+                                           INFINITE);
+
+    if (ReturnValue == 0) {
+
+        ULONG ExitCode;
+
+        ReturnValue = GetExitCodeProcess (userThread,
+                                          &ExitCode);
+    }
     //
     // Now that we're done with our memory we can be a good
     // citizen and free it.

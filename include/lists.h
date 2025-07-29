@@ -12,6 +12,7 @@
 #include "../include/pfn.h"
 #include "../include/trimmer.h"
 #include "../macros.h"
+#include "../include/initializer.h"
 // Lists variables
 // Our doubly linked list containing all of our free pages
 LIST_ENTRY freeList;

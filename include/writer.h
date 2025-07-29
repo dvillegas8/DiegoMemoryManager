@@ -9,6 +9,6 @@
 #include <windows.h>
 #include <stdbool.h>
 #include <stddef.h>
-boolean write_to_disk(ULONG64 frameNumber);
+VOID writeToDisk(PVOID context);
 
 #endif //WRITER_H

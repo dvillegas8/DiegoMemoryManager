@@ -19,7 +19,8 @@ void add_entry(PLIST_ENTRY head, PFN* newpfn) {
 PPFN pop_page(PLIST_ENTRY head) {
     // Check for empty list
     if (head->Flink == head) {
-        printf("pop_page : empty list");
+        printf("pop_page : empty list\n");
+        DebugBreak();
         return NULL;
     }
     // Get the page/PFN we want to remove
@@ -56,9 +57,11 @@ PPFN getFreePage() {
     head = &freeList;
     // Check if Free list is empty
     if(IsListEmpty(head)){
-        trim_page();
-        // TODO: since we trimmed, our trimmed page is in our stanbylist
+        //trim_page();
+        SetEvent(startTrimmer);
+        // Since we trimmed, our new page is going to be in standby list
         head = &standbyList;
+        WaitForSingleObject (finishWriter, INFINITE);
     }
     // Get a free page from the free list
     freePage = pop_page(head);

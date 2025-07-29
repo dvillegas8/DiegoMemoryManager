@@ -27,7 +27,6 @@ void pageFaultHandler(PULONG_PTR fault_va) {
     //
     PPFN freePage;
     ULONG64 frameNumber;
-
     freePage = getFreePage();
     // We need the pte because the pte contains the information we need to (re)construct the va to the right contents
     PPTE pte = va_to_pte(fault_va);

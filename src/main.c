@@ -209,7 +209,7 @@ ULONG accessVirtualMemory (PVOID Context)
     ReturnValue = WaitForSingleObject (startEvent, INFINITE);
     if (ReturnValue == 0) {
         ULONG ExitCode;
-        ReturnValue = GetExitCodeProcess (userThread, &ExitCode);
+        ReturnValue = GetExitCodeProcess (userThreads, &ExitCode);
     }
     unsigned i;
     PULONG_PTR arbitrary_va;
@@ -220,8 +220,7 @@ ULONG accessVirtualMemory (PVOID Context)
     // knowledge. This is a user mode function and our page fault handling is a kernel mode function
     // TODO: Later move accessVirtualMemory into a different file because this is the user mode function, separate
     // TODO: from all page fault machine
-    for (i = 0; i < MB (1); i += 1) {
-
+    for (i = 0; i < MB(1); i += 1) {
         //
         // Randomly access different portions of the virtual address
         // space we obtained above.
@@ -267,6 +266,7 @@ ULONG accessVirtualMemory (PVOID Context)
             page_faulted = TRUE;
         }
         // the arbitrary va was inaccessible
+        EnterCriticalSection (&bigLock);
         if (page_faulted) {
             // Call operating system to make it appear
             pageFaultHandler(arbitrary_va);
@@ -280,6 +280,7 @@ ULONG accessVirtualMemory (PVOID Context)
             // Verifies operating system doesn't lose track
             checkVa(arbitrary_va);
         }
+        LeaveCriticalSection (&bigLock);
     }
     printf ("full_virtual_memory_test : finished accessing %u random virtual addresses\n", i);
     return 0;
@@ -307,28 +308,30 @@ full_virtual_memory_test (
     // Set up PTEs, PFNs, disks, threads, events, lists
     initializeEvents();
     initializeThreads();
+    initializeLocks();
     initializeVirtualMemory();
     SetEvent(startEvent);
     ResetEvent(startEvent);
     // Run user mode accesses to exercise virtual memory
     // Run user mode accesses to exercise virtual memory
 
-    ReturnValue = WaitForSingleObject (userThread,
-                                           INFINITE);
-
+    ReturnValue = WaitForMultipleObjects (NUM_OF_USER_THREADS, userThreads, TRUE, INFINITE);
+    // ReturnValue = WaitForSingleObject (userThreads[0], INFINITE);
     if (ReturnValue == 0) {
 
         ULONG ExitCode;
 
-        ReturnValue = GetExitCodeProcess (userThread,
+        ReturnValue = GetExitCodeProcess (userThreads,
                                           &ExitCode);
     }
+    SetEvent(exitEvent);
+    printf("exit event fired\n");
+    ResetEvent(exitEvent);
     //
     // Now that we're done with our memory we can be a good
     // citizen and free it.
     //
     tearDownVirtualMemory();
-
     return;
 }
 

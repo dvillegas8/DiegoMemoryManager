@@ -10,7 +10,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "../include/lists.h"
+// Variables
+
 // Trimmer functions
-void trim_page();
+VOID trimPage(PVOID context);
 
 #endif //TRIMMER_H

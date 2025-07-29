@@ -35,7 +35,7 @@ void initialize_disk_space() {
     // VA space - PFN space ex: 10 virtual pages - 3 PFN pages = 7 disk pages, having 10 would be a waste
     // We want 7 in this example so that we can have enough space to do swapping
     // We add PAGE_SIZE to help us swap a disk page and physical page when all disk pages are full
-    disk_size = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES * PAGE_SIZE) + PAGE_SIZE;
+    disk_size = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES * PAGE_SIZE) + (PAGE_SIZE * 2);
     disk = malloc(disk_size);
     if (disk == NULL) {
         printf("initialize_disk_space : disk_space malloc failed");
@@ -53,20 +53,55 @@ void initialize_disk_space() {
 
 void initializeEvents() {
     startEvent = CreateEvent (NULL, TRUE, FALSE, NULL);
+    startTrimmer = CreateEvent(NULL, FALSE, FALSE, NULL);
+    finishTrimmer = CreateEvent(NULL, FALSE, FALSE, NULL);
+    exitEvent = CreateEvent (NULL, TRUE, FALSE, NULL);
+    startWriter = CreateEvent (NULL, FALSE, FALSE, NULL);
+    finishWriter = CreateEvent (NULL, FALSE, FALSE, NULL);
 }
 void initializeThreads() {
-    userThread = CreateThread (DEFAULT_SECURITY,
+    userThreads = malloc(sizeof(HANDLE) * NUM_OF_USER_THREADS);
+    for (int i = 0; i < NUM_OF_USER_THREADS; i++) {
+        userThreads[i] = CreateThread (DEFAULT_SECURITY,
                                DEFAULT_STACK_SIZE,
                                accessVirtualMemory,
                                NULL,
                                DEFAULT_CREATION_FLAGS,
                                NULL);
-    if (userThread == NULL) {
-        DebugBreak();
-        printf ("could not create test thread\n");
+        if (userThreads[i] == NULL) {
+            DebugBreak();
+            printf ("could not create user thread\n");
+        }
     }
-
-
+    trimmerThreads = malloc(sizeof(HANDLE) * NUM_OF_TRIMMER_THREADS);
+    for (int i = 0; i < NUM_OF_TRIMMER_THREADS; i++) {
+        trimmerThreads[i] = CreateThread (DEFAULT_SECURITY,
+                               DEFAULT_STACK_SIZE,
+                               trimPage,
+                               NULL,
+                               DEFAULT_CREATION_FLAGS,
+                               NULL);
+        if (trimmerThreads[i] == NULL) {
+            DebugBreak();
+            printf ("could not create trimmer thread\n");
+        }
+    }
+    writerThreads = malloc(sizeof(HANDLE) * NUM_OF_WRITER_THREADS);
+    for (int i = 0; i < NUM_OF_WRITER_THREADS; i++) {
+        writerThreads[i] = CreateThread (DEFAULT_SECURITY,
+                               DEFAULT_STACK_SIZE,
+                               writeToDisk,
+                               NULL,
+                               DEFAULT_CREATION_FLAGS,
+                               NULL);
+        if (writerThreads[i] == NULL) {
+            DebugBreak();
+            printf ("could not create trimmer thread\n");
+        }
+    }
+}
+void initializeLocks() {
+    InitializeCriticalSection(&bigLock);
 }
 void initializeVirtualMemory() {
     BOOL allocated;

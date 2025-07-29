@@ -31,6 +31,14 @@
 #define DEFAULT_CREATION_FLAGS  0
 #define AUTO_RESET              FALSE
 
+#define NUM_OF_USER_THREADS     1
+#define NUM_OF_TRIMMER_THREADS  1
+#define NUM_OF_WRITER_THREADS   1
+// Event information
+#define START_EVENT_INDEX       0
+#define EXIT_EVENT_INDEX        1
+
+
 // Variables
 
 
@@ -56,9 +64,19 @@ ULONG_PTR virtual_address_size_in_unsigned_chunks;
 
 // Events
 HANDLE startEvent;
+HANDLE startTrimmer;
+HANDLE finishTrimmer;
+HANDLE exitEvent;
+HANDLE startWriter;
+HANDLE finishWriter;
 
 // Threads
-HANDLE userThread;
+PHANDLE userThreads;
+PHANDLE trimmerThreads;
+PHANDLE writerThreads;
+
+// Locks
+CRITICAL_SECTION bigLock;
 
 // Initialize Functions
 void initialize_lists(PULONG_PTR physical_page_numbers, PPFN pfnArray, ULONG_PTR physical_page_count);
@@ -67,6 +85,7 @@ void initializeVirtualMemory();
 void initializeEvents();
 void initializeThreads();
 void initializeVirtualMemory();
+void initializeLocks();
 
 
 #endif //INITIALIZER_H

@@ -35,18 +35,17 @@ void initialize_disk_space() {
     // VA space - PFN space ex: 10 virtual pages - 3 PFN pages = 7 disk pages, having 10 would be a waste
     // We want 7 in this example so that we can have enough space to do swapping
     // We add PAGE_SIZE to help us swap a disk page and physical page when all disk pages are full
-    disk_size = VIRTUAL_ADDRESS_SIZE - (NUMBER_OF_PHYSICAL_PAGES * PAGE_SIZE) + (PAGE_SIZE * 2);
-    disk = malloc(disk_size);
+    disk = malloc(DISK_SIZE_IN_BYTES);
     if (disk == NULL) {
         printf("initialize_disk_space : disk_space malloc failed");
     }
-    memset(disk, 0, disk_size);
-    disk_pages = malloc(disk_size / PAGE_SIZE);
+    memset(disk, 0, DISK_SIZE_IN_BYTES);
+    disk_pages = malloc(DISK_SIZE_IN_BYTES / PAGE_SIZE);
     if (disk_pages == NULL) {
         printf("initialize_disk_space : disk_page malloc failed");
     }
     // 0 means that the disk page is available, 1 means the disk page is in use
-    memset(disk_pages, 0, disk_size / PAGE_SIZE);
+    memset(disk_pages, 0, DISK_SIZE_IN_BYTES / PAGE_SIZE);
     // Skip index 0 so that when we page fault, we can correctly check diskIndex in PTE invalid format
     disk_page_index = 1;
 }
@@ -77,7 +76,7 @@ void initializeThreads() {
     for (int i = 0; i < NUM_OF_TRIMMER_THREADS; i++) {
         trimmerThreads[i] = CreateThread (DEFAULT_SECURITY,
                                DEFAULT_STACK_SIZE,
-                               trimPage,
+                               (LPTHREAD_START_ROUTINE) trimPage,
                                NULL,
                                DEFAULT_CREATION_FLAGS,
                                NULL);
@@ -90,7 +89,7 @@ void initializeThreads() {
     for (int i = 0; i < NUM_OF_WRITER_THREADS; i++) {
         writerThreads[i] = CreateThread (DEFAULT_SECURITY,
                                DEFAULT_STACK_SIZE,
-                               writeToDisk,
+                               (LPTHREAD_START_ROUTINE) writeToDisk,
                                NULL,
                                DEFAULT_CREATION_FLAGS,
                                NULL);
@@ -267,8 +266,8 @@ void initializeVirtualMemory() {
     ULONG64 numOfPTEs = virtual_address_size / PAGE_SIZE;
     memset(pageTable,0,numOfPTEs * sizeof(PTE));
     for (int i = 0; i < numOfPTEs; i++) {
-        pageTable[i].invalidFormat.diskIndex = 0;
-        pageTable[i].invalidFormat.mustBeZero = 0;
+        pageTable[i].DiskFormat.diskIndex = 0;
+        pageTable[i].DiskFormat.mustBeZero = 0;
     }
     // Initialize disk space to continue our illusion
     initialize_disk_space();

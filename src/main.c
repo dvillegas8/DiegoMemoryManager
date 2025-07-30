@@ -122,9 +122,7 @@ VOID commit_at_fault_time_test (VOID)
         printf ("commit_at_fault_time_test : could not reserve memory\n");
         return;
     }
-
     for (i = 0; i < MB (1); i += 1) {
-
         //
         // Randomly access different portions of the virtual address
         // space we obtained above.
@@ -220,7 +218,7 @@ ULONG accessVirtualMemory (PVOID Context)
     // knowledge. This is a user mode function and our page fault handling is a kernel mode function
     // TODO: Later move accessVirtualMemory into a different file because this is the user mode function, separate
     // TODO: from all page fault machine
-    for (i = 0; i < MB(1); i += 1) {
+    for (i = 0; i < MB (1); i += 1){
         //
         // Randomly access different portions of the virtual address
         // space we obtained above.

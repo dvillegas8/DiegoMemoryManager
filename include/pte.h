@@ -31,14 +31,14 @@ typedef struct {
     ULONG64 diskIndex: 40;
     // How many bits we have left
     ULONG64 reserve: 23;
-} invalidPte;
+} DiskPTE;
 
 typedef struct {
     // Since we make so many pte, we want to union the fields to save space (Union allows multiple variables to
     // share the same memory space) = overlay
     union {
         validPte validFormat;
-        invalidPte invalidFormat;
+        DiskPTE DiskFormat;
         ULONG64 entireFormat;
     };
 } PTE, *PPTE;

@@ -30,24 +30,33 @@ VOID writeToDisk(PVOID context) {
         counter = 0;
         // TODO: Make this more efficient because we just linear walk through the disk
         // Look for a disk_page that is available
-        while(disk_pages[disk_page_index] != 0 && counter != 2) {
-            disk_page_index++;
-            // Check if we are at the end of the array
-            if (disk_page_index == (disk_size / PAGE_SIZE) - 1){
-                // Wrap around the disk
-                disk_page_index = 1;
-                counter++;
+        // We will start from the last used disk index
+        // // Flag to see if we got a disk index
+        BOOL disk_slot_found = FALSE;
+        for(ULONG64 i=0; i<NUMBER_OF_DISK_PAGES; i++) {
+
+            // Here we check to see if we found a good index!
+            if (disk_pages[disk_page_index] == 0) {
+                disk_slot_found = TRUE;
+                break;
             }
+
+            // Otherwise, we check the next one
+            disk_page_index++;
+
+            // Check if we are at the end of the array and wrap around
+            if (disk_page_index == NUMBER_OF_DISK_PAGES + 1) disk_page_index = 1;
         }
         // Means that there is no disk page available
-        if (counter >= 2) {
+        if (disk_slot_found == FALSE) {
             // TODO: NOTE if you remove this our disk gets full
             MapUserPhysicalPages(transfer_va, 1, NULL);
             victim->pte->entireFormat = 0;
             victim->status = PFN_STANDBY;
             add_entry(&standbyList, victim);
             SetEvent(finishWriter);
-            //printf("Disk is full");
+            printf("Disk is full");
+            DebugBreak();
         }
         else {
             diskAddress = (PVOID)((ULONG64) disk + disk_page_index * PAGE_SIZE);
@@ -61,10 +70,10 @@ VOID writeToDisk(PVOID context) {
                 printf("write_to_disk : transfer_va could not be unmapped");
             }
             victim->status = PFN_STANDBY;
+            victim->pte->DiskFormat.mustBeZero = 0;
+            victim->pte->DiskFormat.diskIndex = disk_page_index;
             add_entry(&standbyList, victim);
             // update pte in pfn
-            victim->pte->invalidFormat.mustBeZero = 0;
-            victim->pte->invalidFormat.diskIndex = disk_page_index;
             SetEvent(finishWriter);
         }
     }

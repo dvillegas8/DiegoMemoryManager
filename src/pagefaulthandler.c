@@ -33,8 +33,8 @@ void pageFaultHandler(PULONG_PTR fault_va) {
     frameNumber = getFrameNumber(freePage);
     // Check if we saved the contents in disk because we trimmed the page earlier, so we need to retrieve
     // the contents into the new page we just got
-    if (pte->invalidFormat.diskIndex != 0) {
-        read_disk(pte->invalidFormat.diskIndex, frameNumber);
+    if (pte->DiskFormat.diskIndex != 0) {
+        read_disk(pte->DiskFormat.diskIndex, frameNumber);
     }
     else {
         // VA that hasn't been connected to a physical page before case

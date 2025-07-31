@@ -1,5 +1,8 @@
 #include"../include/main.h"
 
+#include "dthreads.h"
+
+
 
 //
 // This define enables code that lets us create multiple virtual address
@@ -9,7 +12,7 @@
 // detect and fix unintended failures to unmap virtual addresses properly.
 //
 
-#define SUPPORT_MULTIPLE_VA_TO_SAME_PAGE 0
+
 
 #pragma comment(lib, "advapi32.lib")
 
@@ -199,26 +202,29 @@ VOID commit_at_fault_time_test (VOID)
     return;
 }
 
-ULONG accessVirtualMemory (PVOID Context)
+ULONG accessVirtualMemory (PVOID context)
 {
     ULONG ReturnValue;
 
 
-    ReturnValue = WaitForSingleObject (startEvent, INFINITE);
+    ReturnValue = WaitForSingleObject (vmState.startEvent, INFINITE);
     if (ReturnValue == 0) {
         ULONG ExitCode;
-        ReturnValue = GetExitCodeProcess (userThreads, &ExitCode);
+        ReturnValue = GetExitCodeProcess (vmState.userThreads, &ExitCode);
     }
     unsigned i;
     PULONG_PTR arbitrary_va;
     unsigned random_number;
     BOOL page_faulted;
+    PTHREAD_INFO threadInfo;
+
+    threadInfo = (PTHREAD_INFO)context;
     // This is a loop that accesses random virtual addresses
     // This loop doesn't know anything about the internals of the page fault machinery because we are separating that
     // knowledge. This is a user mode function and our page fault handling is a kernel mode function
     // TODO: Later move accessVirtualMemory into a different file because this is the user mode function, separate
     // TODO: from all page fault machine
-    for (i = 0; i < MB (1); i += 1){
+    for (i = 0; i < 100000; i += 1){
         //
         // Randomly access different portions of the virtual address
         // space we obtained above.
@@ -236,7 +242,7 @@ ULONG accessVirtualMemory (PVOID Context)
 
         random_number = rand () * rand () * rand ();
 
-        random_number %= virtual_address_size_in_unsigned_chunks;
+        random_number %= vmState.virtual_address_size_in_unsigned_chunks;
 
         //
         // Write the virtual address into each page.  If we need to
@@ -253,7 +259,7 @@ ULONG accessVirtualMemory (PVOID Context)
 
         random_number &= ~0x7;
 
-        arbitrary_va = vaBase + random_number;
+        arbitrary_va = vmState.vaBase + random_number;
 
         __try {
 
@@ -264,10 +270,9 @@ ULONG accessVirtualMemory (PVOID Context)
             page_faulted = TRUE;
         }
         // the arbitrary va was inaccessible
-        EnterCriticalSection (&bigLock);
         if (page_faulted) {
             // Call operating system to make it appear
-            pageFaultHandler(arbitrary_va);
+            pageFaultHandler(arbitrary_va, threadInfo);
             //
             // No exception handler needed now since we have connected
             // the virtual address above to one of our physical pages
@@ -278,7 +283,6 @@ ULONG accessVirtualMemory (PVOID Context)
             // Verifies operating system doesn't lose track
             checkVa(arbitrary_va);
         }
-        LeaveCriticalSection (&bigLock);
     }
     printf ("full_virtual_memory_test : finished accessing %u random virtual addresses\n", i);
     return 0;
@@ -288,11 +292,11 @@ void tearDownVirtualMemory(){
     // free(pointer) - > function to free mallocs
     // freeuserphysical pages
     // TODO: free all mallocs, virtuallocates, terminate threads,
-    VirtualFree(vaBase, 0, MEM_RELEASE);
-    VirtualFree(transfer_va, 0, MEM_RELEASE);
-    free(physical_page_numbers);
-    free(pfnarray);
-    free(pageTable);
+    VirtualFree(vmState.vaBase, 0, MEM_RELEASE);
+    //VirtualFree(transfer_va, 0, MEM_RELEASE);
+    free(vmState.physical_page_numbers);
+    free(vmState.pfnarray);
+    free(vmState.pageTable);
 
 }
 VOID
@@ -305,26 +309,29 @@ full_virtual_memory_test (
 
     // Set up PTEs, PFNs, disks, threads, events, lists
     initializeEvents();
-    initializeThreads();
     initializeLocks();
     initializeVirtualMemory();
-    SetEvent(startEvent);
-    ResetEvent(startEvent);
+    initializeThreads();
+    SetEvent(vmState.startEvent);
     // Run user mode accesses to exercise virtual memory
     // Run user mode accesses to exercise virtual memory
 
-    ReturnValue = WaitForMultipleObjects (NUM_OF_USER_THREADS, userThreads, TRUE, INFINITE);
+    HANDLE userThreadsHandles[NUM_OF_USER_THREADS];
+    for (int i = 0; i < NUM_OF_USER_THREADS; i++) {
+        userThreadsHandles[i] = vmState.userThreads[i].ThreadHandle;
+    }
+    ReturnValue = WaitForMultipleObjects (NUM_OF_USER_THREADS, userThreadsHandles, TRUE, INFINITE);
     // ReturnValue = WaitForSingleObject (userThreads[0], INFINITE);
     if (ReturnValue == 0) {
 
         ULONG ExitCode;
 
-        ReturnValue = GetExitCodeProcess (userThreads,
+        ReturnValue = GetExitCodeProcess (vmState.userThreads,
                                           &ExitCode);
     }
-    SetEvent(exitEvent);
+    SetEvent(vmState.exitEvent);
     printf("exit event fired\n");
-    ResetEvent(exitEvent);
+    ResetEvent(vmState.exitEvent);
     //
     // Now that we're done with our memory we can be a good
     // citizen and free it.

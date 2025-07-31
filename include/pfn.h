@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include "../include/pte.h"
 
+
 // PFN status
 #define PFN_FREE 0x0
 #define PFN_ACTIVE 0x1
@@ -31,9 +32,6 @@ typedef struct {
     ULONG64 status: 2;
 
 } PFN, *PPFN;
-
-// Variables
-PPFN PFN_array;
 
 // PFN functions
 ULONG64 getFrameNumber();

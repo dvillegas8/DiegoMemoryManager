@@ -7,9 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include "../include/pfn.h"
-#include "../include/util.h"
-#include "../include/main.h"
+#include "pte.h"
+#include "pfn.h"
 
 #define PAGE_SIZE                   4096
 #define MB(x)                       ((x) * 1024 * 1024)
@@ -29,60 +28,88 @@
 
 #define NUMBER_OF_DISK_PAGES    ((DISK_SIZE_IN_BYTES) / (PAGE_SIZE) - 1)
 
-// Thread information
-#define DEFAULT_SECURITY        ((LPSECURITY_ATTRIBUTES) NULL)
-#define DEFAULT_STACK_SIZE      0
-#define DEFAULT_CREATION_FLAGS  0
-#define AUTO_RESET              FALSE
-
-#define NUM_OF_USER_THREADS     1
-#define NUM_OF_TRIMMER_THREADS  1
-#define NUM_OF_WRITER_THREADS   1
 // Event information
 #define START_EVENT_INDEX       0
 #define EXIT_EVENT_INDEX        1
 
+#define SUPPORT_MULTIPLE_VA_TO_SAME_PAGE 1
+
+typedef struct _THREAD_INFO {
+    // Helps index into its own transfer va
+    ULONG ThreadNumber;
+    ULONG ThreadId;
+    HANDLE ThreadHandle;
+    PVOID transferVA;
+} THREAD_INFO, *PTHREAD_INFO;
 
 // Variables
+typedef struct VMState {
+    MEM_EXTENDED_PARAMETER parameter;
+    // Virtual address array/base
+    PULONG_PTR vaBase;
+    // PTE array called pageTable
+    PPTE pageTable;
+    // Index that has access to a disk page that is available
+    ULONG64 disk_page_index;
+    // Array of booleans to show us which disk pages are available
+    boolean* disk_pages;
+    // Disk
+    PVOID disk;
+    // Space for disk
+    ULONG_PTR disk_size;
+    // PFN array
+    PPFN pfnarray;
+    // Array which holds all the frame numbers
+    PULONG_PTR physical_page_numbers;
+    ULONG_PTR virtual_address_size_in_unsigned_chunks;
+    // Array of transfer vas for each thread so we don't need to waste time with locks (speed up the program)
+    PVOID* userTransferVAs;
+    PVOID* trimmerTransferVAs;
+    PVOID* writerTransferVAs;
 
+    // Events
+    HANDLE startEvent;
+    HANDLE startTrimmer;
+    HANDLE finishTrimmer;
+    HANDLE exitEvent;
+    HANDLE startWriter;
+    HANDLE finishWriter;
+    // Locks
+    CRITICAL_SECTION bigLock;
+    CRITICAL_SECTION freeListLock;
+    CRITICAL_SECTION activeListLock;
+    CRITICAL_SECTION readingLock;
+    CRITICAL_SECTION zeroingPageLock;
+    CRITICAL_SECTION modifiedListLock;
+    CRITICAL_SECTION standByListLock;
 
-// Virtual address array/base
-PULONG_PTR vaBase;
-// PTE array called pageTable
-PPTE pageTable;
-// Index that has access to a disk page that is available
-ULONG64 disk_page_index;
-// Array of booleans to show us which disk pages are available
-boolean* disk_pages;
-// Disk
-PVOID disk;
-// Space for disk
-ULONG_PTR disk_size;
-// Used to help us write to disk
-PULONG_PTR transfer_va;
-// PFN array
-PPFN pfnarray;
-// Array which holds all the frame numbers
-PULONG_PTR physical_page_numbers;
-ULONG_PTR virtual_address_size_in_unsigned_chunks;
+    // thread arrays
+    PTHREAD_INFO userThreads;
+    PTHREAD_INFO trimmerThreads;
+    PTHREAD_INFO writerThreads;
 
-// Events
-HANDLE startEvent;
-HANDLE startTrimmer;
-HANDLE finishTrimmer;
-HANDLE exitEvent;
-HANDLE startWriter;
-HANDLE finishWriter;
+    // Lists variables
+    // Our doubly linked list containing all of our free pages
+    LIST_ENTRY freeList;
+    // Our doubly linked list containing all of our active pages
+    LIST_ENTRY activeList;
+    // Doubly linked list containing pages that have been trimmers and going to be written into disk
+    LIST_ENTRY modifiedList;
+    // Doubly linked list containing pages that have been written into disk
+    LIST_ENTRY standbyList;
 
-// Threads
-PHANDLE userThreads;
-PHANDLE trimmerThreads;
-PHANDLE writerThreads;
+    // Variables
+    PPFN PFN_array;
 
-// Locks
-CRITICAL_SECTION bigLock;
+}VMState;
+
+extern VMState vmState;
 
 // Initialize Functions
+HANDLE
+CreateSharedMemorySection (
+    VOID
+    );
 void initialize_lists(PULONG_PTR physical_page_numbers, PPFN pfnArray, ULONG_PTR physical_page_count);
 void initialize_disk_space();
 void initializeVirtualMemory();

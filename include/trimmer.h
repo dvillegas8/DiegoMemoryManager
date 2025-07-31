@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "../include/lists.h"
+
+#define MAXIMUM_TRIM_BATCH  10
 // Variables
 
 // Trimmer functions

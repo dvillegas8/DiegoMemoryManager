@@ -19,8 +19,6 @@ void add_entry(PLIST_ENTRY head, PFN* newpfn) {
 PPFN pop_page(PLIST_ENTRY head) {
     // Check for empty list
     if (head->Flink == head) {
-        printf("pop_page : empty list\n");
-        DebugBreak();
         return NULL;
     }
     // Get the page/PFN we want to remove
@@ -54,19 +52,30 @@ PPFN getFreePage() {
     PLIST_ENTRY head;
     PPFN freePage;
 
-    head = &freeList;
-    // Check if Free list is empty
-    if(IsListEmpty(head)){
-        //trim_page();
-        SetEvent(startTrimmer);
-        // Since we trimmed, our new page is going to be in standby list
-        head = &standbyList;
-        WaitForSingleObject (finishWriter, INFINITE);
-    }
-    // Get a free page from the free list
-    freePage = pop_page(head);
-    if (freePage == NULL) {
-        printf("full_virtual_memory_test: freePage is null");
+    freePage = NULL;
+    while(freePage == NULL){
+        EnterCriticalSection(&vmState.freeListLock);
+        head = &vmState.freeList;
+        // Check if Free list is empty
+        if(!IsListEmpty(head)) {
+            // Get a free page from the free list
+            freePage = pop_page(head);
+        }
+        LeaveCriticalSection(&vmState.freeListLock);
+        if (freePage == NULL) {
+            EnterCriticalSection(&vmState.standByListLock);
+            head = &vmState.standbyList;
+            // Check if standby list is empty
+            if(!IsListEmpty(head)) {
+                // Get a free page from the standby list
+                freePage = pop_page(head);
+            }
+            LeaveCriticalSection(&vmState.standByListLock);
+        }
+        if (freePage == NULL) {
+            SetEvent(vmState.startTrimmer);
+            WaitForSingleObject (vmState.finishWriter, INFINITE);
+        }
     }
     return freePage;
 }

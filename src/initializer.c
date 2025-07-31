@@ -1,33 +1,35 @@
 //
 // Created by diego.villegas on 7/9/2025.
 #include "../include/initializer.h"
+#include "dthreads.h"
 #include "../macros.h"
 #include "../include/lists.h"
+VMState vmState;
 // Initialize both active and free list and add pfns to free list
 void initialize_lists (PULONG_PTR physical_page_numbers, PPFN pfnarray, ULONG_PTR physical_page_count) {
     // Create the head of our active list
-    InitializeListHead(&activeList);
+    InitializeListHead(&vmState.activeList);
     // Create the Head of our free list
-    InitializeListHead(&freeList);
+    InitializeListHead(&vmState.freeList);
     // Create the head of our modified list
-    InitializeListHead(&modifiedList);
+    InitializeListHead(&vmState.modifiedList);
     // Create the head of our standby list
-    InitializeListHead(&standbyList);
+    InitializeListHead(&vmState.standbyList);
 }
 void initializeSparseArray(PULONG_PTR physical_page_numbers) {
     PPFN pfn;
     for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; i++){
         // Commit physical memory to this spot in the PFN array since we will be mapping the frame number to this
         // specific pfn
-        LPVOID result = VirtualAlloc((PFN_array + physical_page_numbers[i]), sizeof(PFN),
+        LPVOID result = VirtualAlloc((vmState.PFN_array + physical_page_numbers[i]), sizeof(PFN),
             MEM_COMMIT, PAGE_READWRITE);
         if (result == NULL) {
             printf("initialize_sparse_array: VirtualAlloc failed\n");
         }
-        pfn = PFN_array + physical_page_numbers[i];
+        pfn = vmState.PFN_array + physical_page_numbers[i];
         pfn->status = PFN_FREE;
         // TODO: check in about zeroing out this page
-        add_entry(&freeList, pfn);
+        add_entry(&vmState.freeList, pfn);
     }
 }
 
@@ -35,72 +37,84 @@ void initialize_disk_space() {
     // VA space - PFN space ex: 10 virtual pages - 3 PFN pages = 7 disk pages, having 10 would be a waste
     // We want 7 in this example so that we can have enough space to do swapping
     // We add PAGE_SIZE to help us swap a disk page and physical page when all disk pages are full
-    disk = malloc(DISK_SIZE_IN_BYTES);
-    if (disk == NULL) {
+    vmState.disk = malloc(DISK_SIZE_IN_BYTES);
+    if (vmState.disk == NULL) {
         printf("initialize_disk_space : disk_space malloc failed");
     }
-    memset(disk, 0, DISK_SIZE_IN_BYTES);
-    disk_pages = malloc(DISK_SIZE_IN_BYTES / PAGE_SIZE);
-    if (disk_pages == NULL) {
+    memset(vmState.disk, 0, DISK_SIZE_IN_BYTES);
+    vmState.disk_pages = malloc(DISK_SIZE_IN_BYTES / PAGE_SIZE);
+    if (vmState.disk_pages == NULL) {
         printf("initialize_disk_space : disk_page malloc failed");
     }
     // 0 means that the disk page is available, 1 means the disk page is in use
-    memset(disk_pages, 0, DISK_SIZE_IN_BYTES / PAGE_SIZE);
+    memset(vmState.disk_pages, 0, DISK_SIZE_IN_BYTES / PAGE_SIZE);
     // Skip index 0 so that when we page fault, we can correctly check diskIndex in PTE invalid format
-    disk_page_index = 1;
+    vmState.disk_page_index = 1;
 }
 
 void initializeEvents() {
-    startEvent = CreateEvent (NULL, TRUE, FALSE, NULL);
-    startTrimmer = CreateEvent(NULL, FALSE, FALSE, NULL);
-    finishTrimmer = CreateEvent(NULL, FALSE, FALSE, NULL);
-    exitEvent = CreateEvent (NULL, TRUE, FALSE, NULL);
-    startWriter = CreateEvent (NULL, FALSE, FALSE, NULL);
-    finishWriter = CreateEvent (NULL, FALSE, FALSE, NULL);
+    vmState.startEvent = CreateEvent (NULL, TRUE, FALSE, NULL);
+    vmState.startTrimmer = CreateEvent(NULL, FALSE, FALSE, NULL);
+    vmState.finishTrimmer = CreateEvent(NULL, FALSE, FALSE, NULL);
+    vmState.exitEvent = CreateEvent (NULL, TRUE, FALSE, NULL);
+    vmState.startWriter = CreateEvent (NULL, FALSE, FALSE, NULL);
+    vmState.finishWriter = CreateEvent (NULL, FALSE, FALSE, NULL);
 }
 void initializeThreads() {
-    userThreads = malloc(sizeof(HANDLE) * NUM_OF_USER_THREADS);
+    vmState.userThreads = malloc(sizeof(THREAD_INFO) * NUM_OF_USER_THREADS);
     for (int i = 0; i < NUM_OF_USER_THREADS; i++) {
-        userThreads[i] = CreateThread (DEFAULT_SECURITY,
+        vmState.userThreads[i].ThreadNumber = i;
+        vmState.userThreads[i].transferVA = (PVOID) vmState.userTransferVAs[i];
+        vmState.userThreads[i].ThreadHandle = CreateThread (DEFAULT_SECURITY,
                                DEFAULT_STACK_SIZE,
                                accessVirtualMemory,
-                               NULL,
+                               &vmState.userThreads[i],
                                DEFAULT_CREATION_FLAGS,
-                               NULL);
-        if (userThreads[i] == NULL) {
+                               &vmState.userThreads[i].ThreadId);
+        if (vmState.userThreads[i].ThreadHandle == NULL) {
             DebugBreak();
             printf ("could not create user thread\n");
         }
     }
-    trimmerThreads = malloc(sizeof(HANDLE) * NUM_OF_TRIMMER_THREADS);
+    vmState.trimmerThreads = malloc(sizeof(THREAD_INFO) * NUM_OF_TRIMMER_THREADS);
     for (int i = 0; i < NUM_OF_TRIMMER_THREADS; i++) {
-        trimmerThreads[i] = CreateThread (DEFAULT_SECURITY,
+        vmState.trimmerThreads[i].ThreadNumber = i;
+        vmState.trimmerThreads[i].transferVA = (PVOID) vmState.trimmerTransferVAs[i];
+        vmState.trimmerThreads[i].ThreadHandle = CreateThread (DEFAULT_SECURITY,
                                DEFAULT_STACK_SIZE,
                                (LPTHREAD_START_ROUTINE) trimPage,
-                               NULL,
+                               &vmState.trimmerThreads[i],
                                DEFAULT_CREATION_FLAGS,
-                               NULL);
-        if (trimmerThreads[i] == NULL) {
+                               &vmState.trimmerThreads[i].ThreadId);
+        if (vmState.trimmerThreads[i].ThreadHandle == NULL) {
             DebugBreak();
             printf ("could not create trimmer thread\n");
         }
     }
-    writerThreads = malloc(sizeof(HANDLE) * NUM_OF_WRITER_THREADS);
+    vmState.writerThreads = malloc(sizeof(THREAD_INFO) * NUM_OF_WRITER_THREADS);
     for (int i = 0; i < NUM_OF_WRITER_THREADS; i++) {
-        writerThreads[i] = CreateThread (DEFAULT_SECURITY,
+        vmState.writerThreads[i].ThreadNumber = i;
+        vmState.writerThreads[i].transferVA = (PVOID) vmState.writerTransferVAs[i];
+        vmState.writerThreads[i].ThreadHandle = CreateThread (DEFAULT_SECURITY,
                                DEFAULT_STACK_SIZE,
                                (LPTHREAD_START_ROUTINE) writeToDisk,
-                               NULL,
+                               &vmState.writerThreads[i],
                                DEFAULT_CREATION_FLAGS,
-                               NULL);
-        if (writerThreads[i] == NULL) {
+                               &vmState.writerThreads[i].ThreadId);
+        if (vmState.writerThreads[i].ThreadHandle == NULL) {
             DebugBreak();
             printf ("could not create trimmer thread\n");
         }
     }
 }
 void initializeLocks() {
-    InitializeCriticalSection(&bigLock);
+    InitializeCriticalSection(&vmState.bigLock);
+    InitializeCriticalSection(&vmState.freeListLock);
+    InitializeCriticalSection(&vmState.activeListLock);
+    InitializeCriticalSection(&vmState.readingLock);
+    InitializeCriticalSection(&vmState.zeroingPageLock);
+    InitializeCriticalSection(&vmState.modifiedListLock);
+    InitializeCriticalSection(&vmState.standByListLock);
 }
 void initializeVirtualMemory() {
     BOOL allocated;
@@ -144,16 +158,16 @@ void initializeVirtualMemory() {
 
     // Note: You can treat this variable as an array, each index holds a frame number which we have to associate to our pfn
     // We associate each pfn to a frame number in this array and put it into our free list
-    physical_page_numbers = malloc (physical_page_count * sizeof (ULONG_PTR));
+    vmState.physical_page_numbers = malloc (physical_page_count * sizeof (ULONG_PTR));
 
-    if (physical_page_numbers == NULL) {
+    if (vmState.physical_page_numbers == NULL) {
         printf ("full_virtual_memory_test : could not allocate array to hold physical page numbers\n");
         return;
     }
 
     allocated = AllocateUserPhysicalPages (physical_page_handle,
                                            &physical_page_count,
-                                           physical_page_numbers);
+                                           vmState.physical_page_numbers);
 
     if (allocated == FALSE) {
         printf ("full_virtual_memory_test : could not allocate physical pages\n");
@@ -186,39 +200,30 @@ void initializeVirtualMemory() {
 
     virtual_address_size &= ~PAGE_SIZE;
 
-    virtual_address_size_in_unsigned_chunks =
+    vmState.virtual_address_size_in_unsigned_chunks =
                         virtual_address_size / sizeof (ULONG_PTR);
 
 #if SUPPORT_MULTIPLE_VA_TO_SAME_PAGE
 
-    MEM_EXTENDED_PARAMETER parameter = { 0 };
 
     //
     // Allocate a MEM_PHYSICAL region that is "connected" to the AWE section
     // created above.
     //
 
-    parameter.Type = MemExtendedParameterUserPhysicalHandle;
-    parameter.Handle = physical_page_handle;
-
-    p = VirtualAlloc2 (NULL,
+    vmState.parameter.Type = MemExtendedParameterUserPhysicalHandle;
+    vmState.parameter.Handle = physical_page_handle;
+    vmState.vaBase = VirtualAlloc2 (NULL,
                        NULL,
                        virtual_address_size,
                        MEM_RESERVE | MEM_PHYSICAL,
                        PAGE_READWRITE,
-                       &parameter,
+                       &vmState.parameter,
                        1);
-
-#else
-
-    vaBase = VirtualAlloc (NULL,
-                      virtual_address_size,
-                      MEM_RESERVE | MEM_PHYSICAL,
-                      PAGE_READWRITE);
 
 #endif
 
-    if (vaBase == NULL) {
+    if (vmState.vaBase == NULL) {
 
         printf ("full_virtual_memory_test : could not reserve memory %x\n",
                 GetLastError ());
@@ -230,44 +235,71 @@ void initializeVirtualMemory() {
     // Now perform random accesses.
     // TODO: Turn these into initialize functions
     // Initialize our transfer VA
-    transfer_va = VirtualAlloc (NULL,
-                      PAGE_SIZE,
-                      MEM_RESERVE | MEM_PHYSICAL,
-                      PAGE_READWRITE);
+    // Initialize the array of transfer VAs
+    vmState.userTransferVAs = malloc(NUM_OF_USER_THREADS * sizeof(ULONG_PTR));
+    for (int i = 0; i < NUM_OF_USER_THREADS; i++) {
+        vmState.userTransferVAs[i] = VirtualAlloc2 (NULL,
+                       NULL,
+                       PAGE_SIZE,
+                       MEM_RESERVE | MEM_PHYSICAL,
+                       PAGE_READWRITE,
+                       &vmState.parameter,
+                       1);
+    }
+    vmState.trimmerTransferVAs = malloc(NUM_OF_TRIMMER_THREADS * sizeof(ULONG_PTR));
+    for (int i = 0; i < NUM_OF_TRIMMER_THREADS; i++) {
+        vmState.trimmerTransferVAs[i] = VirtualAlloc2 (NULL,
+                       NULL,
+                       PAGE_SIZE,
+                       MEM_RESERVE | MEM_PHYSICAL,
+                       PAGE_READWRITE,
+                       &vmState.parameter,
+                       1);
+    }
+    vmState.writerTransferVAs = malloc(NUM_OF_WRITER_THREADS * sizeof(ULONG_PTR));
+    for (int i = 0; i < NUM_OF_WRITER_THREADS; i++) {
+        vmState.writerTransferVAs[i] = VirtualAlloc2 (NULL,
+                       NULL,
+                       PAGE_SIZE,
+                       MEM_RESERVE | MEM_PHYSICAL,
+                       PAGE_READWRITE,
+                       &vmState.parameter,
+                       1);
+    }
     // Find the largest frame number
     ULONG64 largestFN = 0;
     for (int i = 0; i < physical_page_count; i++) {
-        if (largestFN < physical_page_numbers[i] + 1) {
-            largestFN = physical_page_numbers[i] + 1;
+        if (largestFN < vmState.physical_page_numbers[i] + 1) {
+            largestFN = vmState.physical_page_numbers[i] + 1;
         }
     }
     // Sparse array of PFN
-    PFN_array = VirtualAlloc(NULL, largestFN * sizeof(PFN), MEM_RESERVE, PAGE_READWRITE);
-    if (PFN_array == NULL) {
+    vmState.PFN_array = VirtualAlloc(NULL, largestFN * sizeof(PFN), MEM_RESERVE, PAGE_READWRITE);
+    if (vmState.PFN_array == NULL) {
         printf("InitializeVirtualMemory : could not allocate PFN_array\n");
     }
     // Create an array of PFN's
-    pfnarray = malloc(largestFN * sizeof(PFN));
+    vmState.pfnarray = malloc(largestFN * sizeof(PFN));
     // Error check to see if pfnarray has been allocated
-    if (pfnarray == NULL) {
+    if (vmState.pfnarray == NULL) {
         printf ("full_virtual_memory_test : could not allocate pfnarray\n");
         return;
     }
     //
-    memset(pfnarray, 0, largestFN * sizeof(PFN));
-    initialize_lists (physical_page_numbers, pfnarray, physical_page_count);
-    initializeSparseArray(physical_page_numbers);
+    memset(vmState.pfnarray, 0, largestFN * sizeof(PFN));
+    initialize_lists (vmState.physical_page_numbers, vmState.pfnarray, physical_page_count);
+    initializeSparseArray(vmState.physical_page_numbers);
     // Sets up an array of PTE's called the page table
-    pageTable = malloc(VIRTUAL_ADDRESS_SIZE / PAGE_SIZE * sizeof(PTE));
-    if (pageTable == NULL) {
+    vmState.pageTable = malloc(VIRTUAL_ADDRESS_SIZE / PAGE_SIZE * sizeof(PTE));
+    if (vmState.pageTable == NULL) {
         printf ("full_virtual_memory_test : could not allocate pageTable\n");
         return;
     }
     ULONG64 numOfPTEs = virtual_address_size / PAGE_SIZE;
-    memset(pageTable,0,numOfPTEs * sizeof(PTE));
+    memset(vmState.pageTable,0,numOfPTEs * sizeof(PTE));
     for (int i = 0; i < numOfPTEs; i++) {
-        pageTable[i].DiskFormat.diskIndex = 0;
-        pageTable[i].DiskFormat.mustBeZero = 0;
+        vmState.pageTable[i].DiskFormat.diskIndex = 0;
+        vmState.pageTable[i].DiskFormat.mustBeZero = 0;
     }
     // Initialize disk space to continue our illusion
     initialize_disk_space();

@@ -10,9 +10,10 @@
 #include <windows.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "initializer.h"
 
 void checkVa(PULONG64 va);
-void zeroPage(ULONG64 frameNumber);
+void zeroPage(ULONG64 frameNumber, PTHREAD_INFO threadInfo);
 BOOL GetPrivilege(VOID);
 
 #endif //UTIL_H

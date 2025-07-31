@@ -9,10 +9,10 @@
 #include <windows.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include "../include/initializer.h"
 #include "../include/lists.h"
 #include "../include/reader.h"
+#include "initializer.h"
 // pagefaulthandler functions
 void makePTEValid();
-void pageFaultHandler(PULONG_PTR fault_va);
+void pageFaultHandler(PULONG_PTR fault_va, PTHREAD_INFO threadInfo);
 #endif //PAGEFAULTHANDLER_H

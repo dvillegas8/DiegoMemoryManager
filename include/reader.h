@@ -9,8 +9,9 @@
 #include <windows.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "initializer.h"
 
 
-void read_disk(ULONG64 disk_index, ULONG64 frameNumber);
+void read_disk(ULONG64 disk_index, ULONG64 frameNumber, PTHREAD_INFO threadInfo);
 
 #endif //READER_H

@@ -11,13 +11,13 @@ void checkVa(PULONG64 va) {
         va += 1;
     }
 }
-void zeroPage(ULONG64 frameNumber) {
-    if (MapUserPhysicalPages(transfer_va, 1, &frameNumber) == FALSE) {
+void zeroPage(ULONG64 frameNumber, PTHREAD_INFO threadInfo) {
+    if (MapUserPhysicalPages(threadInfo->transferVA, 1, &frameNumber) == FALSE) {
         DebugBreak();
         printf("read_to_disk : transfer_va could not be mapped");
     }
-    memset(transfer_va, 0, PAGE_SIZE);
-    if (MapUserPhysicalPages(transfer_va, 1, NULL) == FALSE) {
+    memset(threadInfo->transferVA, 0, PAGE_SIZE);
+    if (MapUserPhysicalPages(threadInfo->transferVA, 1, NULL) == FALSE) {
         DebugBreak();
         printf("read_to_disk : transfer_va could not be unmapped");
     }

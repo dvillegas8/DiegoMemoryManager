@@ -18,6 +18,7 @@
 typedef struct {
     // Bit that tells us that pte is active, meaning pte maps to a valid physical page
     ULONG64 valid: 1;
+    ULONG64 status: 1;
     // Page frame number, maps to an actual physical page, 40 bits because we can shave off 12 bits from the
     // physical address. If we want the physical address back, we multiply by 4k
     ULONG64 frameNumber: 40;
@@ -25,13 +26,22 @@ typedef struct {
 
 typedef struct {
     // Bit that tell us that this pte is not active, meaning pte is not mapped into physical memory
-    ULONG64 mustBeZero: 1;
+    ULONG64 invalid: 1;
+    // When 0, indicates that we are in Disk format
+    ULONG64 status: 1;
     // Helps us locate the contents of the physical page that are saved onto disk because the page
     // might have become a victim of our trimming (creating a free page)
     ULONG64 diskIndex: 40;
-    // How many bits we have left
-    ULONG64 reserve: 23;
 } DiskPTE;
+typedef struct {
+    // Bit that tell us that this pte is not active, meaning pte is not mapped into physical memory
+    ULONG64 invalid: 1;
+    // When 1, indicates that we are in transition format
+    ULONG64 status: 1;
+    // Page frame number, maps to an actual physical page, 40 bits because we can shave off 12 bits from the
+    // physical address. If we want the physical address back, we multiply by 4k
+    ULONG64 frameNumber: 40;
+} transitionPte;
 
 typedef struct {
     // Since we make so many pte, we want to union the fields to save space (Union allows multiple variables to
@@ -39,6 +49,7 @@ typedef struct {
     union {
         validPte validFormat;
         DiskPTE DiskFormat;
+        transitionPte transitionFormat;
         ULONG64 entireFormat;
     };
 } PTE, *PPTE;

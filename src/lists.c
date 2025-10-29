@@ -2,6 +2,8 @@
 // Created by diego.villegas on 7/9/2025.
 #include "../include/lists.h"
 
+#include "util.h"
+
 // Method which adds a new entry into our free list
 void add_entry(PLIST_ENTRY head, PFN* newpfn) {
     PLIST_ENTRY previousNewestEntry = head->Blink;
@@ -29,6 +31,9 @@ PPFN pop_page(PLIST_ENTRY head) {
     head->Flink = &nextPage->entry;
     // Make nextpage blink point towards head
     nextPage->entry.Blink = head;
+
+    ASSERT(isValidFrame(freePage));
+
     return freePage;
 }
 
@@ -63,14 +68,16 @@ PPFN getFreePage() {
         }
         LeaveCriticalSection(&vmState.freeListLock);
         if (freePage == NULL) {
-            EnterCriticalSection(&vmState.standByListLock);
+            EnterCriticalSection(&vmState.standbyListLock);
             head = &vmState.standbyList;
             // Check if standby list is empty
             if(!IsListEmpty(head)) {
                 // Get a free page from the standby list
                 freePage = pop_page(head);
+                // Turn old PTE in disk format
+                freePage->pte->DiskFormat.diskIndex = freePage->diskIndex;
             }
-            LeaveCriticalSection(&vmState.standByListLock);
+            LeaveCriticalSection(&vmState.standbyListLock);
         }
         if (freePage == NULL) {
             SetEvent(vmState.startTrimmer);
@@ -79,26 +86,14 @@ PPFN getFreePage() {
     }
     return freePage;
 }
-// TODO: Create a function where we remove a page of a list without returning it
-// This is just for modfied since we already have access to the victim page
-void removePage(PLIST_ENTRY head) {
-    if (head->Flink == head) {
-        printf("removePage : empty list");
-        return;
-    }
-    // Get the page/PFN we want to remove
-    PPFN pageRemoved = (PPFN)head->Flink;
-    // Get the PFN after our freepage
-    // TODO: will this prove an issue if we only have 1 PFN in the list? I am asking this because if we have 1 PFN in
-    // TODO: The list, the line below will cast the head of the list as a
-    PPFN nextPage = (PPFN)pageRemoved->entry.Flink;
-    if (nextPage == NULL) {
-        DebugBreak();
-    }
-    // Make head Flink point towards nextpage
-    head->Flink = &nextPage->entry;
-    // Make nextpage blink point towards head
-    nextPage->entry.Blink = head;
+// Helps us remove a page from anywhere in a list
+void removePage(PLIST_ENTRY pageRemoved) {
+    // Get the page after
+    PLIST_ENTRY after = pageRemoved->Flink;
+    // Get the page before
+    PLIST_ENTRY previous = pageRemoved->Blink;
+    after->Blink = previous;
+    previous->Flink = after;
 }
 
 //

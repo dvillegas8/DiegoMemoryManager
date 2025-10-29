@@ -9,6 +9,8 @@
 #include <windows.h>
 #include <stdbool.h>
 #include <stddef.h>
+
+#define MAXIMUM_WRITE_BATCH     10
 VOID writeToDisk(PVOID context);
 
 #endif //WRITER_H

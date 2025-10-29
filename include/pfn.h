@@ -18,6 +18,7 @@
 #define PFN_ACTIVE 0x1
 #define PFN_MODIFIED 0x2
 #define PFN_STANDBY 0x3
+#define PFN_MIDWRITE 0x4
 
 
 
@@ -29,12 +30,14 @@ typedef struct {
     // Pointer of the PTE this pfn belongs to
     PPTE pte;
     // Indicates the status of the PFN/which list it is currently on
-    ULONG64 status: 2;
-
+    ULONG64 status: 3;
+    // Helps us locate the contents of the physical page that are saved onto disk because the page
+    // For when we soft fault
+    ULONG64 diskIndex: 40;
 } PFN, *PPFN;
 
 // PFN functions
-ULONG64 getFrameNumber();
+ULONG64 getFrameNumber(PPFN pfn);
 
 
 #endif //PFN_H

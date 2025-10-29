@@ -2,10 +2,18 @@
 // Created by diego.villegas on 7/9/2025.
 #include "../include/util.h"
 #include "../include/initializer.h"
+boolean isValidFrame(PPFN pfn) {
+    ULONG64 frameNumber = getFrameNumber(pfn);
+    if (frameNumber > (vmState.largestFN)*sizeof(PFN)) {
+        return false;
+    }
+    return true;
+}
 void checkVa(PULONG64 va) {
     va = (PULONG64) ((ULONG64)va & ~(PAGE_SIZE - 1));
     for (int i = 0; i < PAGE_SIZE / 8; ++i) {
         if (!(*va == 0 || *va == (ULONG64) va)) {
+            printf("Check Va error");
             DebugBreak();
         }
         va += 1;
@@ -103,7 +111,16 @@ GetPrivilege  (
     }
 
     CloseHandle (Token);
-
     return TRUE;
+}
+void clearDiskSlot(ULONG64 diskIndex) {
+    vmState.disk_pages[diskIndex] = 0;
+}
+
+ULONG64 getPTELock(PPTE pte) {
+    ULONG64 index;
+    index = pte - vmState.pageTable;
+    index = index / NUM_OF_PTES_PER_REGION;
+    return index;
 }
 //

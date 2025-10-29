@@ -12,8 +12,14 @@
 #include <stddef.h>
 #include "initializer.h"
 
+
+#define ASSERT(x)   if(!(x)) DebugBreak();
+
+boolean isValidFrame(PPFN pfn);
 void checkVa(PULONG64 va);
 void zeroPage(ULONG64 frameNumber, PTHREAD_INFO threadInfo);
 BOOL GetPrivilege(VOID);
+void clearDiskSlot(ULONG64 diskIndex);
+ULONG64 getPTELock(PPTE pte);
 
 #endif //UTIL_H

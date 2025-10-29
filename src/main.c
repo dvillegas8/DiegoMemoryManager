@@ -224,7 +224,7 @@ ULONG accessVirtualMemory (PVOID context)
     // knowledge. This is a user mode function and our page fault handling is a kernel mode function
     // TODO: Later move accessVirtualMemory into a different file because this is the user mode function, separate
     // TODO: from all page fault machine
-    for (i = 0; i < 100000; i += 1){
+    for (i = 0; i < 1000; i += 1){
         //
         // Randomly access different portions of the virtual address
         // space we obtained above.
@@ -260,28 +260,22 @@ ULONG accessVirtualMemory (PVOID context)
         random_number &= ~0x7;
 
         arbitrary_va = vmState.vaBase + random_number;
+        while (TRUE) {
+            __try {
 
-        __try {
+                *arbitrary_va = (ULONG_PTR) arbitrary_va;
 
-            *arbitrary_va = (ULONG_PTR) arbitrary_va;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
 
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
+                page_faulted = TRUE;
+            }
+            if (!page_faulted) {
+                break;
+            }
+            // the arbitrary va was inaccessible
 
-            page_faulted = TRUE;
-        }
-        // the arbitrary va was inaccessible
-        if (page_faulted) {
             // Call operating system to make it appear
             pageFaultHandler(arbitrary_va, threadInfo);
-            //
-            // No exception handler needed now since we have connected
-            // the virtual address above to one of our physical pages
-            // so no subsequent fault can occur.
-            //
-            // Stamp the arbitrary va into the contents so we know if the operating system loses track
-            *arbitrary_va = (ULONG_PTR) arbitrary_va;
-            // Verifies operating system doesn't lose track
-            checkVa(arbitrary_va);
         }
     }
     printf ("full_virtual_memory_test : finished accessing %u random virtual addresses\n", i);

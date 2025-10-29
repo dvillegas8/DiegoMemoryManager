@@ -34,6 +34,9 @@
 
 #define SUPPORT_MULTIPLE_VA_TO_SAME_PAGE 1
 
+#define NUM_OF_PTES_PER_REGION 64
+#define NUM_OF_PTE_REGIONS (VIRTUAL_ADDRESS_SIZE/PAGE_SIZE) / NUM_OF_PTES_PER_REGION
+
 typedef struct _THREAD_INFO {
     // Helps index into its own transfer va
     ULONG ThreadNumber;
@@ -44,7 +47,11 @@ typedef struct _THREAD_INFO {
 
 // Variables
 typedef struct VMState {
+    ULONG64 numPTEsPerRegion;
+    ULONG64 numDiskSlotsGlobal;
     MEM_EXTENDED_PARAMETER parameter;
+    // Largest Frame Number
+    ULONG64 largestFN;
     // Virtual address array/base
     PULONG_PTR vaBase;
     // PTE array called pageTable
@@ -81,7 +88,9 @@ typedef struct VMState {
     CRITICAL_SECTION readingLock;
     CRITICAL_SECTION zeroingPageLock;
     CRITICAL_SECTION modifiedListLock;
-    CRITICAL_SECTION standByListLock;
+    CRITICAL_SECTION standbyListLock;
+    CRITICAL_SECTION pageTableLock;
+    CRITICAL_SECTION regionsPageTableLock[NUM_OF_PTE_REGIONS];
 
     // thread arrays
     PTHREAD_INFO userThreads;
@@ -98,8 +107,8 @@ typedef struct VMState {
     // Doubly linked list containing pages that have been written into disk
     LIST_ENTRY standbyList;
 
-    // Variables
-    PPFN PFN_array;
+    // Sparse array
+    PPFN PFN_base;
 
 }VMState;
 

@@ -21,12 +21,12 @@ void initializeSparseArray(PULONG_PTR physical_page_numbers) {
     for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; i++){
         // Commit physical memory to this spot in the PFN array since we will be mapping the frame number to this
         // specific pfn
-        LPVOID result = VirtualAlloc((vmState.PFN_array + physical_page_numbers[i]), sizeof(PFN),
+        LPVOID result = VirtualAlloc((vmState.PFN_base + physical_page_numbers[i]), sizeof(PFN),
             MEM_COMMIT, PAGE_READWRITE);
         if (result == NULL) {
             printf("initialize_sparse_array: VirtualAlloc failed\n");
         }
-        pfn = vmState.PFN_array + physical_page_numbers[i];
+        pfn = vmState.PFN_base + physical_page_numbers[i];
         pfn->status = PFN_FREE;
         // TODO: check in about zeroing out this page
         add_entry(&vmState.freeList, pfn);
@@ -114,7 +114,11 @@ void initializeLocks() {
     InitializeCriticalSection(&vmState.readingLock);
     InitializeCriticalSection(&vmState.zeroingPageLock);
     InitializeCriticalSection(&vmState.modifiedListLock);
-    InitializeCriticalSection(&vmState.standByListLock);
+    InitializeCriticalSection(&vmState.standbyListLock);
+    InitializeCriticalSection(&vmState.pageTableLock);
+    for (int i = 0; i < NUM_OF_PTE_REGIONS; i++) {
+        InitializeCriticalSection(&vmState.regionsPageTableLock[i]);
+    }
 }
 void initializeVirtualMemory() {
     BOOL allocated;
@@ -123,6 +127,8 @@ void initializeVirtualMemory() {
     ULONG_PTR physical_page_count;
     HANDLE physical_page_handle;
     ULONG_PTR virtual_address_size;
+
+    vmState.numDiskSlotsGlobal = NUMBER_OF_DISK_PAGES;
 
     //
     // Allocate the physical pages that we will be managing.
@@ -260,33 +266,33 @@ void initializeVirtualMemory() {
     for (int i = 0; i < NUM_OF_WRITER_THREADS; i++) {
         vmState.writerTransferVAs[i] = VirtualAlloc2 (NULL,
                        NULL,
-                       PAGE_SIZE,
+                       MAXIMUM_WRITE_BATCH * PAGE_SIZE,
                        MEM_RESERVE | MEM_PHYSICAL,
                        PAGE_READWRITE,
                        &vmState.parameter,
                        1);
     }
     // Find the largest frame number
-    ULONG64 largestFN = 0;
+    vmState.largestFN = 0;
     for (int i = 0; i < physical_page_count; i++) {
-        if (largestFN < vmState.physical_page_numbers[i] + 1) {
-            largestFN = vmState.physical_page_numbers[i] + 1;
+        if (vmState.largestFN < vmState.physical_page_numbers[i] + 1) {
+            vmState.largestFN = vmState.physical_page_numbers[i] + 1;
         }
     }
     // Sparse array of PFN
-    vmState.PFN_array = VirtualAlloc(NULL, largestFN * sizeof(PFN), MEM_RESERVE, PAGE_READWRITE);
-    if (vmState.PFN_array == NULL) {
-        printf("InitializeVirtualMemory : could not allocate PFN_array\n");
+    vmState.PFN_base = VirtualAlloc(NULL, vmState.largestFN * sizeof(PFN), MEM_RESERVE, PAGE_READWRITE);
+    if (vmState.PFN_base == NULL) {
+        printf("InitializeVirtualMemory : could not allocate PFN_base\n");
     }
     // Create an array of PFN's
-    vmState.pfnarray = malloc(largestFN * sizeof(PFN));
+    vmState.pfnarray = malloc(vmState.largestFN * sizeof(PFN));
     // Error check to see if pfnarray has been allocated
     if (vmState.pfnarray == NULL) {
         printf ("full_virtual_memory_test : could not allocate pfnarray\n");
         return;
     }
     //
-    memset(vmState.pfnarray, 0, largestFN * sizeof(PFN));
+    memset(vmState.pfnarray, 0, vmState.largestFN * sizeof(PFN));
     initialize_lists (vmState.physical_page_numbers, vmState.pfnarray, physical_page_count);
     initializeSparseArray(vmState.physical_page_numbers);
     // Sets up an array of PTE's called the page table
@@ -296,10 +302,11 @@ void initializeVirtualMemory() {
         return;
     }
     ULONG64 numOfPTEs = virtual_address_size / PAGE_SIZE;
+    vmState.numPTEsPerRegion = numOfPTEs / NUM_OF_PTE_REGIONS;
     memset(vmState.pageTable,0,numOfPTEs * sizeof(PTE));
     for (int i = 0; i < numOfPTEs; i++) {
         vmState.pageTable[i].DiskFormat.diskIndex = 0;
-        vmState.pageTable[i].DiskFormat.mustBeZero = 0;
+        vmState.pageTable[i].DiskFormat.invalid = 0;
     }
     // Initialize disk space to continue our illusion
     initialize_disk_space();

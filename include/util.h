@@ -13,7 +13,6 @@
 #include "initializer.h"
 
 
-#define ASSERT(x)   if(!(x)) DebugBreak();
 
 boolean isValidFrame(PPFN pfn);
 void checkVa(PULONG64 va);

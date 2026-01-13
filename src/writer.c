@@ -17,12 +17,17 @@ VOID writeToDisk(PVOID context) {
     ULONG64 diskPagesFound;
     ULONG64 batchSize;
 
-    batchSize = MAXIMUM_WRITE_BATCH;
     threadInfo = (PTHREAD_INFO)context;
     events[START_EVENT_INDEX] = vmState.startWriter;
     events[EXIT_EVENT_INDEX] = vmState.exitEvent;
     WaitForSingleObject(vmState.startEvent, INFINITE);
     while (TRUE){
+        // Reset Batch size back to max
+        batchSize = MAXIMUM_WRITE_BATCH;
+        // Reset Victims
+        memset(victims,0, sizeof(PPFN) * MAXIMUM_WRITE_BATCH);
+        // Reset Disk Slots
+        memset(slotsAvailable, 0, sizeof(ULONG64) * MAXIMUM_WRITE_BATCH);
         EnterCriticalSection(&vmState.modifiedListLock);
         if (IsListEmpty(&vmState.modifiedList)) {
             LeaveCriticalSection(&vmState.modifiedListLock);
@@ -54,10 +59,11 @@ VOID writeToDisk(PVOID context) {
             // Otherwise, we check the next one
             vmState.disk_page_index++;
             // Check if we are at the end of the array and wrap around
-            if (vmState.disk_page_index == NUMBER_OF_DISK_PAGES + 1) {
+            if (vmState.disk_page_index == NUMBER_OF_DISK_PAGES) {
                 vmState.disk_page_index = 1;
             }
         }
+        //ASSERT(diskPagesFound != 1);
         if (diskPagesFound != 0) {
             disk_slot_found = TRUE;
         }
@@ -67,13 +73,19 @@ VOID writeToDisk(PVOID context) {
         EnterCriticalSection(&vmState.modifiedListLock);
         for (int i = 0; i < batchSize; i++) {
             victims[i] = pop_page(&vmState.modifiedList);
-            // Update page status to midwrite
             if (victims[i] == NULL) {
                 break;
             }
+            EnterCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
+            vmState.pageLocksStatus[victims[i]->lockIndex] = 1;
+            vmState.pageLocksStatusThreads[2] = 1;
+            // Update page status to midwrite
+            ASSERT(victims[i]->status == PFN_MODIFIED);
             victims[i]->status = PFN_MIDWRITE;
             frameNumbers[i] = getFrameNumber(victims[i]);
             numVictims++;
+            vmState.pageLocksStatus[victims[i]->lockIndex] = 1;
+            LeaveCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
         }
         LeaveCriticalSection(&vmState.modifiedListLock);
 
@@ -86,8 +98,14 @@ VOID writeToDisk(PVOID context) {
             MapUserPhysicalPages(threadInfo->transferVA, numVictims, NULL);
             EnterCriticalSection(&vmState.modifiedListLock);
             for (int i = 0; i < numVictims; i++) {
+                EnterCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
+                vmState.pageLocksStatus[victims[i]->lockIndex] = 1;
+                vmState.pageLocksStatusThreads[2] = 1;
                 victims[i]->status = PFN_MODIFIED;
                 add_entry(&vmState.modifiedList, victims[i]);
+                vmState.pageLocksStatusThreads[2] = 0;
+                vmState.pageLocksStatus[victims[i]->lockIndex] = 0;
+                LeaveCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
             }
             LeaveCriticalSection(&vmState.modifiedListLock);
         }
@@ -99,21 +117,32 @@ VOID writeToDisk(PVOID context) {
             }
             for (int i = 0; i < numVictims; i++) {
                 if (victims[i]->status == PFN_MIDWRITE) {
-                    diskAddress = (PVOID)((ULONG64) vmState.disk + slotsAvailable[i] * PAGE_SIZE);
-                    // Copy contents from transfer va to diskAddress
-                    memcpy(diskAddress, (PVOID)((ULONG_PTR)threadInfo->transferVA + (i * PAGE_SIZE)), PAGE_SIZE);
-                    // Make disk page unavailable
-                    vmState.disk_pages[slotsAvailable[i]] = 1;
-                    victims[i]->status = PFN_STANDBY;
-                    victims[i]->diskIndex = vmState.disk_pages[slotsAvailable[i]];
                     EnterCriticalSection(&vmState.standbyListLock);
-                    add_entry(&vmState.standbyList, victims[i]);
+                    EnterCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
+                    vmState.pageLocksStatus[victims[i]->lockIndex] = 1;
+                    vmState.pageLocksStatusThreads[2] = 1;
+                    // Double check if page is still Midwrite
+                    if (victims[i]->status == PFN_MIDWRITE) {
+                        diskAddress = (PVOID)((ULONG64) vmState.disk + slotsAvailable[i] * PAGE_SIZE);
+                        // Copy contents from transfer va to diskAddress
+                        memcpy(diskAddress, (PVOID)((ULONG_PTR)threadInfo->transferVA + (i * PAGE_SIZE)), PAGE_SIZE);
+                        // Make disk page unavailable
+                        vmState.disk_pages[slotsAvailable[i]] = 1;
+                        // Update the physical page
+                        victims[i]->status = PFN_STANDBY;
+                        victims[i]->diskIndex = slotsAvailable[i];
+                        // Check if our diskIndex is within range
+                        ASSERT(victims[i]->diskIndex < NUMBER_OF_DISK_PAGES);
+                        // TODO: standbylistlock was previously here double check if this is wrong or correct
+                        add_entry(&vmState.standbyList, victims[i]);
+                    }
+                    // After our double check, out victim was soft faulted on so we don't want to write it
+                    vmState.pageLocksStatusThreads[2] = 0;
+                    vmState.pageLocksStatus[victims[i]->lockIndex] = 0;
+                    LeaveCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
                     LeaveCriticalSection(&vmState.standbyListLock);
                 }
-                else {
-                    // Should not be possible to NOT be mid-write because no soft faulting just yet
-                    DebugBreak();
-                }
+                // Our Victim page was soft faulted on, so now it is active and we don't write it
             }
             // Unmap transfer VA
             if (MapUserPhysicalPages(threadInfo->transferVA, numVictims, NULL) == FALSE) {

@@ -59,7 +59,7 @@ VOID malloc_test (VOID)
     PULONG_PTR p;
     unsigned random_number;
 
-    p = malloc (VIRTUAL_ADDRESS_SIZE);
+    p = malloc (VIRTUAL_ADDRESS_SIZE_IN_BYTES);
 
     if (p == NULL) {
         printf ("malloc_test : could not malloc memory\n");
@@ -117,7 +117,7 @@ VOID commit_at_fault_time_test (VOID)
     BOOL page_faulted;
 
     p = VirtualAlloc (NULL,
-                      VIRTUAL_ADDRESS_SIZE,
+                      VIRTUAL_ADDRESS_SIZE_IN_BYTES,
                       MEM_RESERVE,
                       PAGE_NOACCESS);
 
@@ -224,7 +224,7 @@ ULONG accessVirtualMemory (PVOID context)
     // knowledge. This is a user mode function and our page fault handling is a kernel mode function
     // TODO: Later move accessVirtualMemory into a different file because this is the user mode function, separate
     // TODO: from all page fault machine
-    for (i = 0; i < 1000; i += 1){
+    for (i = 0; i < 100000; i += 1){
         //
         // Randomly access different portions of the virtual address
         // space we obtained above.
@@ -276,6 +276,7 @@ ULONG accessVirtualMemory (PVOID context)
 
             // Call operating system to make it appear
             pageFaultHandler(arbitrary_va, threadInfo);
+            page_faulted = FALSE;
         }
     }
     printf ("full_virtual_memory_test : finished accessing %u random virtual addresses\n", i);

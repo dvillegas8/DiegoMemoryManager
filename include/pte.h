@@ -4,6 +4,10 @@
 
 #ifndef PTE_H
 #define PTE_H
+
+
+#define PTE_ON_DISK 0
+#define PTE_IN_TRANSITION 1
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
@@ -16,7 +20,7 @@
 // Struct has 64 bits available
 // Note, the number all the way to the right is how many bits we allocate to the field
 typedef struct {
-    // Bit that tells us that pte is active, meaning pte maps to a valid physical page
+    // Bit that tells us that pte is active (=1), meaning pte maps to a valid physical page
     ULONG64 valid: 1;
     ULONG64 status: 1;
     // Page frame number, maps to an actual physical page, 40 bits because we can shave off 12 bits from the
@@ -25,7 +29,7 @@ typedef struct {
 } validPte;
 
 typedef struct {
-    // Bit that tell us that this pte is not active, meaning pte is not mapped into physical memory
+    // Bit that tell us that this pte is not active (=0), meaning pte is not mapped into physical memory
     ULONG64 invalid: 1;
     // When 0, indicates that we are in Disk format
     ULONG64 status: 1;
@@ -58,6 +62,6 @@ typedef struct {
 PPTE va_to_pte(PULONG_PTR virtual_address);
 PULONG_PTR pte_to_va(PPTE pte);
 
-
+#define IS_PTE_TRANSITION(pte)  (pte->transitionFormat.status == 1 && pte->transitionFormat.invalid == 0)
 
 #endif //PTE_H

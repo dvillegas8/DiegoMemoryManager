@@ -12,21 +12,26 @@
 
 #define PAGE_SIZE                   4096
 #define MB(x)                       ((x) * 1024 * 1024)
-//
-// This is intentionally a power of two so we can use masking to stay
-// within bounds.
-//
-#define VIRTUAL_ADDRESS_SIZE        MB(16)
-#define VIRTUAL_ADDRESS_SIZE_IN_UNSIGNED_CHUNKS        (VIRTUAL_ADDRESS_SIZE / sizeof (ULONG_PTR))
+
 //
 // Deliberately use a physical page pool that is approximately 1% of the
 // virtual address space
 //
-#define NUMBER_OF_PHYSICAL_PAGES   ((VIRTUAL_ADDRESS_SIZE / PAGE_SIZE) / 64)
+#define NUMBER_OF_PHYSICAL_PAGES   64
+// This number includes the disk slot 0, which is ALWAYS full and cannot be used.
+// So, technically, we only have 63 available slots
+#define NUMBER_OF_DISK_PAGES       64
+#define DISK_SIZE_IN_BYTES         (NUMBER_OF_DISK_PAGES * PAGE_SIZE)
 
-#define DISK_SIZE_IN_BYTES       (((VIRTUAL_ADDRESS_SIZE) - ((NUMBER_OF_PHYSICAL_PAGES) * PAGE_SIZE)) + (PAGE_SIZE * 2))
+// (((VIRTUAL_ADDRESS_SIZE) - ((NUMBER_OF_PHYSICAL_PAGES) * PAGE_SIZE)) + (PAGE_SIZE * 2))
 
-#define NUMBER_OF_DISK_PAGES    ((DISK_SIZE_IN_BYTES) / (PAGE_SIZE) - 1)
+// This is intentionally a power of two so we can use masking to stay
+// within bounds.
+//  We subtract two here because (1) we know that disk slot 0 is ALWAYS ignored, and (2) we need
+//  to ensure that we don't run out of space.
+#define VIRTUAL_ADDRESS_SIZE_IN_PAGES                  (NUMBER_OF_PHYSICAL_PAGES + NUMBER_OF_DISK_PAGES - 2)
+#define VIRTUAL_ADDRESS_SIZE_IN_BYTES                  (VIRTUAL_ADDRESS_SIZE_IN_PAGES * PAGE_SIZE)
+#define VIRTUAL_ADDRESS_SIZE_IN_UNSIGNED_CHUNKS        (VIRTUAL_ADDRESS_SIZE_IN_BYTES / sizeof (ULONG_PTR))
 
 // Event information
 #define START_EVENT_INDEX       0
@@ -34,8 +39,11 @@
 
 #define SUPPORT_MULTIPLE_VA_TO_SAME_PAGE 1
 
-#define NUM_OF_PTES_PER_REGION 64
-#define NUM_OF_PTE_REGIONS (VIRTUAL_ADDRESS_SIZE/PAGE_SIZE) / NUM_OF_PTES_PER_REGION
+#define NUM_OF_PTES_PER_REGION                          64
+#define NUM_OF_PTE_REGIONS                              (VIRTUAL_ADDRESS_SIZE_IN_PAGES / NUM_OF_PTES_PER_REGION)
+
+#define ASSERT(x)   if(!(x)) DebugBreak();
+
 
 typedef struct _THREAD_INFO {
     // Helps index into its own transfer va
@@ -47,6 +55,7 @@ typedef struct _THREAD_INFO {
 
 // Variables
 typedef struct VMState {
+    ULONG NumberOfFaults;
     ULONG64 numPTEsPerRegion;
     ULONG64 numDiskSlotsGlobal;
     MEM_EXTENDED_PARAMETER parameter;
@@ -91,6 +100,12 @@ typedef struct VMState {
     CRITICAL_SECTION standbyListLock;
     CRITICAL_SECTION pageTableLock;
     CRITICAL_SECTION regionsPageTableLock[NUM_OF_PTE_REGIONS];
+    CRITICAL_SECTION pageLocks[NUMBER_OF_PHYSICAL_PAGES];
+
+    //DEBUG
+    boolean pageLocksStatus[NUMBER_OF_PHYSICAL_PAGES];
+    boolean pageLocksStatusThreads[3];
+
 
     // thread arrays
     PTHREAD_INFO userThreads;

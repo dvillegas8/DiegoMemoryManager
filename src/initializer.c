@@ -28,6 +28,7 @@ void initializeSparseArray(PULONG_PTR physical_page_numbers) {
         }
         pfn = vmState.PFN_base + physical_page_numbers[i];
         pfn->status = PFN_FREE;
+        pfn->lockIndex = i;
         // TODO: check in about zeroing out this page
         add_entry(&vmState.freeList, pfn);
     }
@@ -42,12 +43,12 @@ void initialize_disk_space() {
         printf("initialize_disk_space : disk_space malloc failed");
     }
     memset(vmState.disk, 0, DISK_SIZE_IN_BYTES);
-    vmState.disk_pages = malloc(DISK_SIZE_IN_BYTES / PAGE_SIZE);
+    vmState.disk_pages = malloc(NUMBER_OF_DISK_PAGES);
     if (vmState.disk_pages == NULL) {
         printf("initialize_disk_space : disk_page malloc failed");
     }
     // 0 means that the disk page is available, 1 means the disk page is in use
-    memset(vmState.disk_pages, 0, DISK_SIZE_IN_BYTES / PAGE_SIZE);
+    memset(vmState.disk_pages, 0, NUMBER_OF_DISK_PAGES);
     // Skip index 0 so that when we page fault, we can correctly check diskIndex in PTE invalid format
     vmState.disk_page_index = 1;
 }
@@ -106,6 +107,7 @@ void initializeThreads() {
             printf ("could not create trimmer thread\n");
         }
     }
+
 }
 void initializeLocks() {
     InitializeCriticalSection(&vmState.bigLock);
@@ -118,6 +120,9 @@ void initializeLocks() {
     InitializeCriticalSection(&vmState.pageTableLock);
     for (int i = 0; i < NUM_OF_PTE_REGIONS; i++) {
         InitializeCriticalSection(&vmState.regionsPageTableLock[i]);
+    }
+    for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; i++) {
+        InitializeCriticalSection(&vmState.pageLocks[i]);
     }
 }
 void initializeVirtualMemory() {
@@ -185,6 +190,7 @@ void initializeVirtualMemory() {
         printf ("full_virtual_memory_test : allocated only %llu pages out of %u pages requested\n",
                 physical_page_count,
                 NUMBER_OF_PHYSICAL_PAGES);
+        ASSERT(FALSE);
     }
 
     //
@@ -198,16 +204,8 @@ void initializeVirtualMemory() {
     // to illustrate how we can manage the illusion.
     //
 
-    virtual_address_size = 64 * physical_page_count * PAGE_SIZE;
 
-    //
-    // Round down to a PAGE_SIZE boundary.
-    //
-
-    virtual_address_size &= ~PAGE_SIZE;
-
-    vmState.virtual_address_size_in_unsigned_chunks =
-                        virtual_address_size / sizeof (ULONG_PTR);
+    vmState.virtual_address_size_in_unsigned_chunks = VIRTUAL_ADDRESS_SIZE_IN_UNSIGNED_CHUNKS;
 
 #if SUPPORT_MULTIPLE_VA_TO_SAME_PAGE
 
@@ -221,7 +219,7 @@ void initializeVirtualMemory() {
     vmState.parameter.Handle = physical_page_handle;
     vmState.vaBase = VirtualAlloc2 (NULL,
                        NULL,
-                       virtual_address_size,
+                       VIRTUAL_ADDRESS_SIZE_IN_BYTES,
                        MEM_RESERVE | MEM_PHYSICAL,
                        PAGE_READWRITE,
                        &vmState.parameter,
@@ -291,22 +289,19 @@ void initializeVirtualMemory() {
         printf ("full_virtual_memory_test : could not allocate pfnarray\n");
         return;
     }
-    //
     memset(vmState.pfnarray, 0, vmState.largestFN * sizeof(PFN));
-    initialize_lists (vmState.physical_page_numbers, vmState.pfnarray, physical_page_count);
+    initialize_lists(vmState.physical_page_numbers, vmState.pfnarray, physical_page_count);
     initializeSparseArray(vmState.physical_page_numbers);
     // Sets up an array of PTE's called the page table
-    vmState.pageTable = malloc(VIRTUAL_ADDRESS_SIZE / PAGE_SIZE * sizeof(PTE));
+    vmState.pageTable = malloc(VIRTUAL_ADDRESS_SIZE_IN_PAGES * sizeof(PTE));
     if (vmState.pageTable == NULL) {
         printf ("full_virtual_memory_test : could not allocate pageTable\n");
         return;
     }
-    ULONG64 numOfPTEs = virtual_address_size / PAGE_SIZE;
-    vmState.numPTEsPerRegion = numOfPTEs / NUM_OF_PTE_REGIONS;
-    memset(vmState.pageTable,0,numOfPTEs * sizeof(PTE));
-    for (int i = 0; i < numOfPTEs; i++) {
-        vmState.pageTable[i].DiskFormat.diskIndex = 0;
-        vmState.pageTable[i].DiskFormat.invalid = 0;
+    vmState.numPTEsPerRegion = NUM_OF_PTES_PER_REGION;
+    memset(vmState.pageTable,0,VIRTUAL_ADDRESS_SIZE_IN_PAGES * sizeof(PTE));
+    for (int i = 0; i < VIRTUAL_ADDRESS_SIZE_IN_PAGES; i++) {
+        vmState.pageTable[i].entireFormat = 0;
     }
     // Initialize disk space to continue our illusion
     initialize_disk_space();

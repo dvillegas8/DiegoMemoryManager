@@ -35,6 +35,7 @@ VOID trimPage(PVOID context) {
         }
         numVictims = 0;
         // Get the "oldest page" off the active list & remove it
+
         EnterCriticalSection(&vmState.activeListLock);
         for (int i = 0; i < MAXIMUM_TRIM_BATCH; i++) {
             victims[i] = pop_page(&vmState.activeList);
@@ -54,25 +55,31 @@ VOID trimPage(PVOID context) {
         if (numVictims == 0) {
             continue;
         }
-        // Unmap ptes
+
+        // Make victim page modified because we trimmed it and about to add it to disk
+        EnterCriticalSection(&vmState.pageTableLock);
+        EnterCriticalSection(&vmState.modifiedListLock);
+        for (int i = 0; i < numVictims; i++) {
+            EnterCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
+            vmState.pageLocksStatus[victims[i]->lockIndex] = 1;
+            vmState.pageLocksStatusThreads[1] = 1;
+            victims[i]->status = PFN_MODIFIED;
+            ptes[i]->transitionFormat.invalid = 0;
+            ptes[i]->transitionFormat.status = PTE_IN_TRANSITION;
+            ASSERT(ptes[i]->transitionFormat.frameNumber == frameNumbers[i]);
+            // Add victim to modified list
+            add_entry(&vmState.modifiedList, victims[i]);
+            vmState.pageLocksStatusThreads[1] = 0;
+            vmState.pageLocksStatus[victims[i]->lockIndex] = 0;
+            LeaveCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
+        }
+        LeaveCriticalSection(&vmState.modifiedListLock);
+        LeaveCriticalSection(&vmState.pageTableLock);
+        // Unmap pages
         if (MapUserPhysicalPagesScatter(virtualAddresses, numVictims, NULL) == FALSE) {
             DebugBreak();
             printf("trim_page : VA could not be unmapped");
         }
-
-        // Make victim page modified because we trimmed it and about to add it to disk
-        EnterCriticalSection(&vmState.modifiedListLock);
-        for (int i = 0; i < numVictims; i++) {
-            victims[i]->status = PFN_MODIFIED;
-            EnterCriticalSection(&vmState.pageTableLock);
-            ptes[i]->transitionFormat.invalid = 0;
-            ptes[i]->transitionFormat.status = 1;
-            ptes[i]->transitionFormat.frameNumber = frameNumbers[i];
-            LeaveCriticalSection(&vmState.pageTableLock);
-            // Add victim to modified list
-            add_entry(&vmState.modifiedList, victims[i]);
-        }
-        LeaveCriticalSection(&vmState.modifiedListLock);
 
         // Begin writing to disk
         SetEvent(vmState.startWriter);

@@ -113,7 +113,7 @@ GetPrivilege  (
     CloseHandle (Token);
     return TRUE;
 }
-void clearDiskSlot(ULONG64 diskIndex) {
+void clearDiskSlot(ULONG diskIndex) {
     vmState.disk_pages[diskIndex] = 0;
 }
 

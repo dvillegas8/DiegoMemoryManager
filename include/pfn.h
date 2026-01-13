@@ -34,6 +34,8 @@ typedef struct {
     // Helps us locate the contents of the physical page that are saved onto disk because the page
     // For when we soft fault
     ULONG64 diskIndex: 40;
+    // Index to keep track this page's lock
+    ULONG64 lockIndex;
 } PFN, *PPFN;
 
 // PFN functions

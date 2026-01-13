@@ -12,14 +12,23 @@ void makePTEValid(PPTE pte, PPFN freePage, PULONG_PTR fault_va, ULONG64 frameNum
     freePage->pte = pte;
     // Update PTE to reflect what I did (later when we have to look for victims), store 40 bit frame number & set valid to 1
     EnterCriticalSection(&vmState.pageTableLock);
-    freePage->pte->validFormat.valid = 1;
+    pte->validFormat.valid = 1;
+    pte->validFormat.status = 0;
+    pte->validFormat.frameNumber = frameNumber;
     LeaveCriticalSection(&vmState.pageTableLock);
     // get Head of active list and add our "free page" (which is now active) into our active list
     EnterCriticalSection(&vmState.activeListLock);
+    EnterCriticalSection(&vmState.pageLocks[freePage->lockIndex]);
+    vmState.pageLocksStatus[freePage->lockIndex] = 1;
+    vmState.pageLocksStatusThreads[0] = 1;
     // Set our pfn status as active because we are connecting a va to a physical page
+    ASSERT(freePage->entry.Flink == &freePage->entry);
     freePage->status = PFN_ACTIVE;
     head = &vmState.activeList;
     add_entry(head, freePage);
+    vmState.pageLocksStatusThreads[0] = 0;
+    vmState.pageLocksStatus[freePage->lockIndex] = 0;
+    LeaveCriticalSection(&vmState.pageLocks[freePage->lockIndex]);
     LeaveCriticalSection(&vmState.activeListLock);
     // Map arbitrary_va to frame number
     if (MapUserPhysicalPages (fault_va, 1, &frameNumber) == FALSE) {
@@ -38,25 +47,37 @@ void pageFaultHandler(PULONG_PTR fault_va, PTHREAD_INFO threadInfo) {
 
     // We need the pte because the pte contains the information we need to (re)construct the va to the right contents
     pte = va_to_pte(fault_va);
-    // Check we are in transition format in order to do soft faulting
-    if (pte->transitionFormat.status == 1) {
+    // Check if pte is in transition format in order to do soft faulting, reclaiming back its page
+    if (IS_PTE_TRANSITION(pte)) {
         // Soft fault/ rescue
         frameNumber = pte->transitionFormat.frameNumber;
         freePage = vmState.PFN_base + frameNumber;
         // Check where the rescued page is so that we can grab the lock and remove it from that list
         if(freePage->status == PFN_MODIFIED){
             EnterCriticalSection(&vmState.modifiedListLock);
-            removePage(&freePage->entry);
+            EnterCriticalSection(&vmState.pageLocks[freePage->lockIndex]);
+            vmState.pageLocksStatus[freePage->lockIndex] = 1;
+            // Doublecheck the status of the page for a potential race condition
+            if (freePage->status == PFN_MODIFIED) {
+                removePage(&freePage->entry);
+            }
+            vmState.pageLocksStatus[freePage->lockIndex] = 0;
+            LeaveCriticalSection(&vmState.pageLocks[freePage->lockIndex]);
             LeaveCriticalSection(&vmState.modifiedListLock);
         }
-        else if (freePage->status == PFN_STANDBY){
+        if (freePage->status == PFN_STANDBY){
             EnterCriticalSection(&vmState.standbyListLock);
-            removePage(&freePage->entry);
+            EnterCriticalSection(&vmState.pageLocks[freePage->lockIndex]);
+            vmState.pageLocksStatus[freePage->lockIndex] = 1;
+            // Doublecheck the status of the page for a potential race condition
+            if (freePage->status == PFN_STANDBY) {
+                removePage(&freePage->entry);
+            }
+            vmState.pageLocksStatus[freePage->lockIndex] = 0;
+            LeaveCriticalSection(&vmState.pageLocks[freePage->lockIndex]);
             LeaveCriticalSection(&vmState.standbyListLock);
             clearDiskSlot(freePage->diskIndex);
         }
-
-        // TODO: Change this so that we don't have any code after wards so wont need the return
         // Keep in mind of a case where we grab a page mid write, however we don't need to do anything since
         // the page doesn't belong to a list for now
         // TODO: Eventually, we want to implement pte locks and page locks
@@ -76,6 +97,14 @@ void pageFaultHandler(PULONG_PTR fault_va, PTHREAD_INFO threadInfo) {
             zeroPage(frameNumber, threadInfo);
         }
     }
+    // acquire page table lock
+    // check this pte -- he MIGHT be valid
+    // if he IS valid (someone else reolved the fault) then put freePage on the free list
+
+    // otherwise -- he is still faulting:
     makePTEValid(pte, freePage, fault_va, frameNumber);
+    // release the page table lock
+
+    vmState.NumberOfFaults += 1;
 }
 //

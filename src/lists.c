@@ -31,9 +31,10 @@ PPFN pop_page(PLIST_ENTRY head) {
     head->Flink = &nextPage->entry;
     // Make nextpage blink point towards head
     nextPage->entry.Blink = head;
-
     ASSERT(isValidFrame(freePage));
-
+    // Make page we removed point towards itself as it doesn't belong to any list at the moment
+    freePage->entry.Flink = &freePage->entry;
+    freePage->entry.Blink = &freePage->entry;
     return freePage;
 }
 
@@ -68,20 +69,35 @@ PPFN getFreePage() {
         }
         LeaveCriticalSection(&vmState.freeListLock);
         if (freePage == NULL) {
+            EnterCriticalSection(&vmState.pageTableLock);
             EnterCriticalSection(&vmState.standbyListLock);
             head = &vmState.standbyList;
             // Check if standby list is empty
             if(!IsListEmpty(head)) {
                 // Get a free page from the standby list
                 freePage = pop_page(head);
-                // Turn old PTE in disk format
-                freePage->pte->DiskFormat.diskIndex = freePage->diskIndex;
+                EnterCriticalSection(&vmState.pageLocks[freePage->lockIndex]);
+                vmState.pageLocksStatus[freePage->lockIndex] = 1;
+                ASSERT(freePage->diskIndex < NUMBER_OF_DISK_PAGES);
+                // Turn old PTE into disk format
+                PPTE old_pte = freePage->pte;
+                ASSERT(old_pte);
+                ASSERT(old_pte->DiskFormat.invalid == 0);
+                // Save the contents (which is on disk) of the page into the original PTE because its page is being
+                // repurposed
+                old_pte->DiskFormat.diskIndex = freePage->diskIndex;
+                // Clear diskIndex in page that was repurposed for a hard fault
+                freePage->diskIndex = 0;
+                old_pte->DiskFormat.status = PTE_ON_DISK;
+                vmState.pageLocksStatus[freePage->lockIndex] = 0;
+                LeaveCriticalSection(&vmState.pageLocks[freePage->lockIndex]);
             }
             LeaveCriticalSection(&vmState.standbyListLock);
+            LeaveCriticalSection(&vmState.pageTableLock);
         }
         if (freePage == NULL) {
             SetEvent(vmState.startTrimmer);
-            WaitForSingleObject (vmState.finishWriter, INFINITE);
+            WaitForSingleObject(vmState.finishWriter, INFINITE);
         }
     }
     return freePage;
@@ -94,6 +110,9 @@ void removePage(PLIST_ENTRY pageRemoved) {
     PLIST_ENTRY previous = pageRemoved->Blink;
     after->Blink = previous;
     previous->Flink = after;
+    // Page doesn't belong to any list, make it point towards itself
+    pageRemoved->Flink = pageRemoved;
+    pageRemoved->Blink = pageRemoved;
 }
 
 //

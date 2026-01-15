@@ -224,7 +224,7 @@ ULONG accessVirtualMemory (PVOID context)
     // knowledge. This is a user mode function and our page fault handling is a kernel mode function
     // TODO: Later move accessVirtualMemory into a different file because this is the user mode function, separate
     // TODO: from all page fault machine
-    for (i = 0; i < 100000; i += 1){
+    for (i = 0; i < 1000000; i += 1){
         //
         // Randomly access different portions of the virtual address
         // space we obtained above.

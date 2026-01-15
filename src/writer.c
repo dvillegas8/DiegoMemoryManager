@@ -69,7 +69,6 @@ VOID writeToDisk(PVOID context) {
         }
         batchSize = diskPagesFound;
         numVictims = 0;
-
         EnterCriticalSection(&vmState.modifiedListLock);
         for (int i = 0; i < batchSize; i++) {
             victims[i] = pop_page(&vmState.modifiedList);
@@ -78,20 +77,23 @@ VOID writeToDisk(PVOID context) {
             }
             EnterCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
             vmState.pageLocksStatus[victims[i]->lockIndex] = 1;
-            vmState.pageLocksStatusThreads[2] = 1;
             // Update page status to midwrite
             ASSERT(victims[i]->status == PFN_MODIFIED);
             victims[i]->status = PFN_MIDWRITE;
             frameNumbers[i] = getFrameNumber(victims[i]);
             numVictims++;
-            vmState.pageLocksStatus[victims[i]->lockIndex] = 1;
+            vmState.pageLocksStatus[victims[i]->lockIndex] = 0;
             LeaveCriticalSection(&vmState.pageLocks[victims[i]->lockIndex]);
         }
         LeaveCriticalSection(&vmState.modifiedListLock);
 
         // For a case where numVictims is not equal to/less than batchsize/diskPagesFound
-        if(numVictims < batchSize){
+        if(numVictims < batchSize) {
             batchSize = numVictims;
+        }
+        // Case for when we do find a disk slot but we have no victims since user thread soft faulted
+        if (numVictims == 0) {
+            continue;
         }
         // Means that there is no disk page available & we didn't pull any victims
         if (disk_slot_found == FALSE) {

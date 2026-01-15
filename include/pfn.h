@@ -19,6 +19,7 @@
 #define PFN_MODIFIED 0x2
 #define PFN_STANDBY 0x3
 #define PFN_MIDWRITE 0x4
+#define PFN_MIDRESCUE 0x5
 
 
 

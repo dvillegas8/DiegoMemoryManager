@@ -108,6 +108,7 @@ void removePage(PLIST_ENTRY pageRemoved) {
     PLIST_ENTRY after = pageRemoved->Flink;
     // Get the page before
     PLIST_ENTRY previous = pageRemoved->Blink;
+    // Connect
     after->Blink = previous;
     previous->Flink = after;
     // Page doesn't belong to any list, make it point towards itself

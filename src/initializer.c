@@ -124,6 +124,9 @@ void initializeLocks() {
     for (int i = 0; i < NUMBER_OF_PHYSICAL_PAGES; i++) {
         InitializeCriticalSection(&vmState.pageLocks[i]);
     }
+    for (int i = 0; i < VIRTUAL_ADDRESS_SIZE_IN_PAGES; i++) {
+        InitializeCriticalSection(&vmState.individualPageTableLock[i]);
+    }
 }
 void initializeVirtualMemory() {
     BOOL allocated;

@@ -100,6 +100,7 @@ typedef struct VMState {
     CRITICAL_SECTION standbyListLock;
     CRITICAL_SECTION pageTableLock;
     CRITICAL_SECTION regionsPageTableLock[NUM_OF_PTE_REGIONS];
+    CRITICAL_SECTION individualPageTableLock[VIRTUAL_ADDRESS_SIZE_IN_PAGES];
     CRITICAL_SECTION pageLocks[NUMBER_OF_PHYSICAL_PAGES];
 
     //DEBUG

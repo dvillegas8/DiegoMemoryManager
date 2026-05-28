@@ -19,6 +19,8 @@ void checkVa(PULONG64 va);
 void zeroPage(ULONG64 frameNumber, PTHREAD_INFO threadInfo);
 BOOL GetPrivilege(VOID);
 void clearDiskSlot(ULONG64 diskIndex);
-ULONG64 getPTELock(PPTE pte);
+ULONG64 getPTERegionLock(PPTE pte);
+void enterPTELock(PULONG_PTR virtual_address);
+void leavePTELock(PULONG_PTR virtual_address);
 
 #endif //UTIL_H

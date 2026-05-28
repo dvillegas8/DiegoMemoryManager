@@ -117,10 +117,18 @@ void clearDiskSlot(ULONG diskIndex) {
     vmState.disk_pages[diskIndex] = 0;
 }
 
-ULONG64 getPTELock(PPTE pte) {
+ULONG64 getPTERegionLock(PPTE pte) {
     ULONG64 index;
     index = pte - vmState.pageTable;
     index = index / NUM_OF_PTES_PER_REGION;
     return index;
+}
+void enterPTELock(PULONG_PTR virtual_address) {
+    ULONG64 index = ((ULONG64) virtual_address - (ULONG64) vmState.vaBase) / PAGE_SIZE;
+    EnterCriticalSection(&vmState.individualPageTableLock[index]);
+}
+void leavePTELock(PULONG_PTR virtual_address) {
+    ULONG64 index = ((ULONG64) virtual_address - (ULONG64) vmState.vaBase) / PAGE_SIZE;
+    LeaveCriticalSection(&vmState.individualPageTableLock[index]);
 }
 //
